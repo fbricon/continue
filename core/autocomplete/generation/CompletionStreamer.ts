@@ -27,8 +27,8 @@ export class CompletionStreamer {
       prefix,
       () =>
         llm.supportsFim()
-          ? llm.streamFim(prefix, suffix, completionOptions)
-          : llm.streamComplete(prompt, {
+          ? llm.streamFim(prefix, suffix, token, completionOptions)
+          : llm.streamComplete(prompt, token, {
               ...completionOptions,
               raw: true,
             }),
@@ -43,6 +43,7 @@ export class CompletionStreamer {
     const generatorWithCancellation = async function* () {
       for await (const update of generator) {
         if (token.aborted) {
+          console.log("CompletionStreamer.*streamCompletionWithFilters aborted");
           return;
         }
         yield update;

@@ -1,3 +1,4 @@
+import { AbortError } from "node-fetch";
 import {
   ChatMessage,
   CompletionOptions,
@@ -30,7 +31,7 @@ interface ModelFileParams {
   min_p?: number;
   // deprecated?
   num_thread?: number;
-  use_mmap?: boolean;	
+  use_mmap?: boolean;
   num_gqa?: number;
   num_gpu?: number;
 }
@@ -77,7 +78,7 @@ class Ollama extends BaseLLM {
     if (options.model === "AUTODETECT") {
       return;
     }
-
+    console.log("api/show called for " + this._getModel());
     this.fetch(this.getEndpoint("api/show"), {
       method: "POST",
       headers: {
@@ -262,6 +263,7 @@ class Ollama extends BaseLLM {
 
   protected async *_streamComplete(
     prompt: string,
+    signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<string> {
     const response = await this.fetch(this.getEndpoint("api/generate"), {
@@ -271,6 +273,7 @@ class Ollama extends BaseLLM {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(this._getGenerateOptions(options, prompt)),
+      signal
     });
 
     let buffer = "";
@@ -301,6 +304,7 @@ class Ollama extends BaseLLM {
 
   protected async *_streamChat(
     messages: ChatMessage[],
+    signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<ChatMessage> {
     const response = await this.fetch(this.getEndpoint("api/chat"), {
@@ -310,6 +314,7 @@ class Ollama extends BaseLLM {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(this._getChatOptions(options, messages)),
+      signal
     });
 
     let buffer = "";
@@ -348,41 +353,53 @@ class Ollama extends BaseLLM {
   protected async *_streamFim(
     prefix: string,
     suffix: string,
+    signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<string> {
-    const response = await this.fetch(this.getEndpoint("api/generate"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(this._getGenerateOptions(options, prefix, suffix)),
-    });
+    //try {
 
-    let buffer = "";
-    for await (const value of streamResponse(response)) {
-      // Append the received chunk to the buffer
-      buffer += value;
-      // Split the buffer into individual JSON chunks
-      const chunks = buffer.split("\n");
-      buffer = chunks.pop() ?? "";
+      const response = await this.fetch(this.getEndpoint("api/generate"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(this._getGenerateOptions(options, prefix, suffix)),
+        signal
+      });
 
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        if (chunk.trim() !== "") {
-          try {
-            const j = JSON.parse(chunk);
-            if ("response" in j) {
-              yield j.response;
-            } else if ("error" in j) {
-              throw new Error(j.error);
+      let buffer = "";
+      for await (const value of streamResponse(response)) {
+        // Append the received chunk to the buffer
+        buffer += value;
+        // Split the buffer into individual JSON chunks
+        const chunks = buffer.split("\n");
+        buffer = chunks.pop() ?? "";
+
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          if (chunk.trim() !== "") {
+            try {
+              const j = JSON.parse(chunk);
+              if ("response" in j) {
+                yield j.response;
+              } else if ("error" in j) {
+                throw new Error(j.error);
+              }
+            } catch (e) {
+              throw new Error(`Error parsing Ollama response: ${e} ${chunk}`);
             }
-          } catch (e) {
-            throw new Error(`Error parsing Ollama response: ${e} ${chunk}`);
           }
         }
       }
-    }
+    // } catch (e) {
+    //   if (e instanceof AbortError) {
+    //     console.log("Completion request was cancelled");
+    //     return '';
+    //   }
+    //   console.log("Completion request failed with ", e);
+    //   throw e;
+    // }
   }
 
   async listModels(): Promise<string[]> {

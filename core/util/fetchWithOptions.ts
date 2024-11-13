@@ -44,7 +44,6 @@ export function fetchwithRequestOptions(
   }
 
   const timeout = (requestOptions?.timeout ?? TIMEOUT) * 1000; // measured in ms
-
   const agentOptions: {[key: string]: any} = {
     ca,
     rejectUnauthorized: requestOptions?.verifySsl,

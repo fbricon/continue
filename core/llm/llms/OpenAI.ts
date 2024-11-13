@@ -167,11 +167,13 @@ class OpenAI extends BaseLLM {
 
   protected async _complete(
     prompt: string,
+    signal: AbortSignal,
     options: CompletionOptions,
   ): Promise<string> {
     let completion = "";
     for await (const chunk of this._streamChat(
       [{ role: "user", content: prompt }],
+      signal,
       options,
     )) {
       completion += chunk.content;
@@ -200,10 +202,12 @@ class OpenAI extends BaseLLM {
 
   protected async *_streamComplete(
     prompt: string,
+    signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<string> {
     for await (const chunk of this._streamChat(
       [{ role: "user", content: prompt }],
+      signal,
       options,
     )) {
       yield stripImages(chunk.content);
@@ -212,6 +216,7 @@ class OpenAI extends BaseLLM {
 
   protected async *_legacystreamComplete(
     prompt: string,
+    signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<string> {
     const args: any = this._convertArgs(options, []);
@@ -225,6 +230,7 @@ class OpenAI extends BaseLLM {
         ...args,
         stream: true,
       }),
+      signal
     });
 
     for await (const value of streamSse(response)) {
@@ -236,6 +242,7 @@ class OpenAI extends BaseLLM {
 
   protected async *_streamChat(
     messages: ChatMessage[],
+    signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<ChatMessage> {
     if (
@@ -247,6 +254,7 @@ class OpenAI extends BaseLLM {
     ) {
       for await (const content of this._legacystreamComplete(
         stripImages(messages[messages.length - 1]?.content || ""),
+        signal,
         options,
       )) {
         yield {
@@ -267,6 +275,7 @@ class OpenAI extends BaseLLM {
       method: "POST",
       headers: this._getHeaders(),
       body: JSON.stringify(body),
+      signal
     });
 
     // Handle non-streaming response
@@ -286,6 +295,7 @@ class OpenAI extends BaseLLM {
   protected async *_streamFim(
     prefix: string,
     suffix: string,
+    signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<string> {
     const endpoint = new URL("fim/completions", this.apiBase);
@@ -309,6 +319,7 @@ class OpenAI extends BaseLLM {
         "x-api-key": this.apiKey ?? "",
         Authorization: `Bearer ${this.apiKey}`,
       },
+      signal
     });
     for await (const chunk of streamSse(resp)) {
       yield chunk.choices[0].delta.content;

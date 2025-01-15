@@ -33,6 +33,7 @@ import { Battery } from "./util/battery";
 import { VsCodeIde } from "./VsCodeIde";
 
 import type { VsCodeWebviewProtocol } from "./webviewProtocol";
+import { startLocalOllama } from "core/util/ollamaHelper";
 
 import { SetupGranitePage } from "./granite/panels/setupGranitePage";
 
@@ -1001,6 +1002,9 @@ const getCommandsMap: (
     },
     "continue.openAccountDialog": () => {
       sidebar.webviewProtocol?.request("openDialogMessage", "account");
+    },
+    "continue.startLocalOllama": () => {
+      startLocalOllama(ide);
     },
     "granite.writeContinueConfig": () => {
       vscode.window

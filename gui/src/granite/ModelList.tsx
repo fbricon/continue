@@ -133,7 +133,7 @@ const ModelList: React.FC<ModelListProps> = ({ className, label, value, onChange
                 </label>
 
                 <div className={className + `--wrapper`}>
-                    {formatOptionLabel(options.find(option => option.value === value), { context: 'value' })}
+                    {formatOptionLabel(options.find(option => option.value === value)!, { context: 'value' })}
                     {status !== null && status !== ModelStatus.installed && !progress && <span className='info-label' style={{ display: 'flex', alignItems: 'center' }}> {getStatusLabel(status)}</span>}
                 </div >
             </div >

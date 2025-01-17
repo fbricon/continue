@@ -8,6 +8,7 @@ import { getExtensionVersion } from "../util/util";
 
 import { VsCodeContinueApi } from "./api";
 import setupInlineTips from "./InlineTipManager";
+import { isDevMode } from "core/granite/commons/constants";
 
 export async function activateExtension(context: vscode.ExtensionContext) {
   // Add necessary files
@@ -33,6 +34,10 @@ export async function activateExtension(context: vscode.ExtensionContext) {
   }
 
   const api = new VsCodeContinueApi(vscodeExtension);
+  if (isDevMode) {
+    await vscode.commands.executeCommand("granite.setup");
+  }
+
   const continuePublicApi = {
     registerCustomContextProvider: api.registerCustomContextProvider.bind(api),
   };

@@ -189,8 +189,8 @@ export class SetupGranitePage {
     let stylesUri, scriptUri;
 
     if (context.extensionMode == ExtensionMode.Development) {
-      scriptUri = "http://localhost:5173/src/granite/index.tsx";
-      stylesUri = "http://localhost:5173/src/granite/App.css";
+      scriptUri = "http://localhost:5173/src/granite/indexSetupGranite.tsx";
+      stylesUri = "http://localhost:5173/src/granite/indexSetupGranite.css";
     } else {
       const extensionUri = context.extensionUri;
 
@@ -198,13 +198,13 @@ export class SetupGranitePage {
       stylesUri = getUri(webview, extensionUri, [
         "gui",
         "assets",
-        "index-setupGranite.css",
+        "indexSetupGranite.css",
       ]);
       // The JS file from the React build output
       scriptUri = getUri(webview, extensionUri, [
         "gui",
         "assets",
-        "index-setupGranite.js",
+        "indexSetupGranite.js",
       ]);
     }
 
@@ -222,7 +222,7 @@ export class SetupGranitePage {
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} ${devStyleSrc} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src ${devConnectSrc}>
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} ${devStyleSrc} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src ${devConnectSrc} 'self'">
           <link rel="stylesheet" type="text/css" href="${stylesUri}">
           <title>Granite Models</title>
         </head>
@@ -462,4 +462,3 @@ export class SetupGranitePage {
   }
 
 }
-

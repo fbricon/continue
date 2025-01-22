@@ -1,10 +1,74 @@
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
 import { RadioGroup } from '@headlessui/react';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { StatusCheck, StatusValue } from './StatusCheck';
 import { ServerStatus } from 'core/granite/commons/statuses';
 import { VSCodeButton } from '../components/VSCodeButton';
 import './GraniteWizard.css';
+import { SystemInfo } from 'core/granite/commons/sysInfo';
+import { vscode } from './utils/vscode';
+import { current } from '@reduxjs/toolkit';
+
+interface InstallationMode {
+  id: string;
+  label: string;
+  supportsRefresh: boolean;
+}
+
+const OLLAMA_STEP = 0;
+const MODELS_STEP = 1;
+const FINAL_STEP = 2
+
+enum WizardStatus {
+  idle,
+  downloadingOllama,
+  startingOllama,
+  downloadingModel
+}
+
+interface WizardContextProps {
+  currentStatus: WizardStatus;
+  setCurrentStatus: React.Dispatch<React.SetStateAction<WizardStatus>>;
+  activeStep: number;
+  setActiveStep: React.Dispatch<React.SetStateAction<number>>;
+  stepStatuses: StatusValue[];
+  setStepStatuses: React.Dispatch<React.SetStateAction<StatusValue[]>>;
+  serverStatus: ServerStatus;
+  setServerStatus: React.Dispatch<React.SetStateAction<ServerStatus>>;
+  systemInfo: SystemInfo | null;
+  setSystemInfo: React.Dispatch<React.SetStateAction<SystemInfo | null>>;
+  installationModes: InstallationMode[];
+  setInstallationModes: React.Dispatch<React.SetStateAction<InstallationMode[]>>;
+}
+
+const WizardContext = createContext<WizardContextProps | undefined>(undefined);
+
+export const useWizardContext = (): WizardContextProps => {
+  const context = useContext(WizardContext);
+  if (!context) {
+    throw new Error('useWizardContext must be used within a WizardProvider');
+  }
+  return context;
+};
+
+interface WizardProviderProps {
+  children: ReactNode;
+}
+
+export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
+  const [activeStep, setActiveStep] = useState(0);
+  const [currentStatus, setCurrentStatus] = useState<WizardStatus>(WizardStatus.idle);
+  const [stepStatuses, setStepStatuses] = useState<StatusValue[]>(['missing', 'missing', 'missing']);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>(ServerStatus.unknown);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [installationModes, setInstallationModes] = useState<InstallationMode[]>([]);
+
+  return (
+    <WizardContext.Provider value={{ currentStatus, setCurrentStatus, activeStep, setActiveStep, stepStatuses, setStepStatuses, serverStatus, setServerStatus, systemInfo, setSystemInfo, installationModes, setInstallationModes }}>
+      {children}
+    </WizardContext.Provider>
+  );
+};
 
 interface ModelOption {
   name: string;
@@ -31,7 +95,7 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
   };
 
   return (
-    <div 
+    <div
       className={`wizard-step ${isActive ? 'active' : ''}`}
       onClick={onClick}
       onKeyDown={handleKeyDown}
@@ -53,59 +117,63 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
 };
 
 const OllamaInstallStep: React.FC<StepProps> = (props) => {
-  const [downloadComplete, setDownloadComplete] = useState(false);
+  const { serverStatus, installationModes, setCurrentStatus } = useWizardContext();
 
-  const handleDownload = async () => {
-    try {
-      if (props.onStatusChange) {
-        props.onStatusChange('partial');
-      }
-      setDownloadComplete(true);
-    } catch (e) {
-      console.error(e);
-    }
+  const handleDownload = () => {
+    setCurrentStatus(WizardStatus.downloadingOllama);
+    vscode.postMessage({
+      command: "installOllama",
+      data: {
+        mode: installationModes[0].id,
+      },
+    });
   };
 
   const handleStartOllama = () => {
-    if (props.onStatusChange) {
-      props.onStatusChange('complete');
-    }
-    if (props.onComplete) {
-      props.onComplete();
-    }
-    if (props.onNext) {
-      setTimeout(props.onNext, 100);
-    }
+    setCurrentStatus(WizardStatus.startingOllama);
+    vscode.postMessage({
+      command: "startOllama",
+    });
+
   };
+
+  let serverButton: React.ReactNode;
+
+if (serverStatus === ServerStatus.started) {
+  serverButton = (
+    <VSCodeButton variant='secondary' disabled>
+      Started!
+    </VSCodeButton>
+  );
+} else if (serverStatus === ServerStatus.stopped) {
+  serverButton = (
+    // TODO let user choose between installing manually or automatically (via homebrew/script/installer)
+    <VSCodeButton onClick={handleStartOllama}>
+      Start Ollama...
+    </VSCodeButton>
+  );
+} else {
+  serverButton = (
+    <VSCodeButton onClick={handleDownload}>
+      Download Ollama...
+    </VSCodeButton>
+  );
+}
 
   return (
     <WizardStep {...props}>
       <div className="mt-4">
         <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
-          Ollama is an open source tool that allows running AI models locally. To
-          begin using Granite.Code, first follow the instructions to download and
-          install Ollama.
+          Ollama is an open source tool that allows running AI models locally. To begin using Granite.Code, first follow the instructions to download and install Ollama.
         </p>
-        {!downloadComplete && (
-          <VSCodeButton
-            onClick={handleDownload}
-          >
-            Download Ollama...
-          </VSCodeButton>
-        )}
-        {downloadComplete && (
-          <VSCodeButton
-            onClick={handleStartOllama}
-          >
-            Start Ollama...
-          </VSCodeButton>
-        )}
+        {serverButton}
       </div>
     </WizardStep>
   );
 };
 
 const ModelSelectionStep: React.FC<StepProps> = (props) => {
+  const { serverStatus } = useWizardContext();
   const [selectedModel, setSelectedModel] = useState<string>('large');
   const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'complete'>('idle');
   const [progress, setProgress] = useState(0);
@@ -207,7 +275,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
           <div className="mt-4 flex items-center gap-2">
             <VSCodeButton
               onClick={startDownload}
-              disabled={downloadState !== 'idle'}
+              disabled={serverStatus !== ServerStatus.started && downloadState !== 'idle'}
               variant={downloadState === "complete"? "secondary": "primary"}
             >
               {downloadState === 'idle' ? 'Download' :
@@ -238,6 +306,14 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
               </span>
             </div>
           )}
+          {serverStatus !== ServerStatus.started && (
+            <div className="mt-4 flex items-start space-x-2">
+              <ExclamationTriangleIcon className="h-4 w-4 mt-0.5" style={{ color: 'var(--vscode-errorForeground, #f48771)' }} aria-hidden="true" />
+              <span className="text-sm" style={{ color: 'var(--vscode-errorForeground, #f48771)' }}>
+                Ollama must be started
+              </span>
+            </div>
+          )}
         </div>
       )}
     </WizardStep>
@@ -245,6 +321,18 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
 };
 
 const StartLocalAIStep: React.FC<StepProps> = (props) => {
+  const { setStepStatuses } = useWizardContext();
+  const handleShowTutorial = async () => {
+    console.log("show tutorial");
+    setStepStatuses(prevStatuses => {
+      const newStatuses = [...prevStatuses];
+      newStatuses[FINAL_STEP] = 'complete';
+      return newStatuses;
+    });
+    vscode.postMessage({
+      command: "showTutorial",
+    });
+  };
   return (
     <WizardStep {...props}>
       {props.isActive && (
@@ -254,6 +342,7 @@ const StartLocalAIStep: React.FC<StepProps> = (props) => {
           </p>
           <VSCodeButton
             className="mt-4"
+            onClick={handleShowTutorial}
           >
             Open Tutorial
           </VSCodeButton>
@@ -264,60 +353,118 @@ const StartLocalAIStep: React.FC<StepProps> = (props) => {
 };
 
 export const GraniteWizard: React.FC = () => {
-  const [activeStep, setActiveStep] = useState(0);
-  const [serverStatus, setServerStatus] = useState<ServerStatus>(ServerStatus.unknown);
-  const [stepStatuses, setStepStatuses] = useState<StatusValue[]>(['missing', 'missing', 'missing']);
+  return (
+    <WizardProvider>
+      <WizardContent />
+    </WizardProvider>
+  );
+};
 
-  const handleStepComplete = (stepIndex: number) => {
-    setActiveStep(stepIndex + 1);
-  };
+function requestStatus(): void {
+  console.log("requestStatus");
+  vscode.postMessage({
+    command: "fetchStatus",
+  });
+}
 
-  const handleStepStatusChange = (stepIndex: number, status: StatusValue) => {
-    setStepStatuses(prevStatuses => {
-      const newStatuses = [...prevStatuses];
-      newStatuses[stepIndex] = status;
-      // When model download completes (step 1), also mark the final step as complete
-      if (stepIndex === 1 && status === 'complete') {
-        newStatuses[2] = 'complete';
+function init(): void {
+  vscode.postMessage({
+    command: "init",
+  });
+}
+
+const WizardContent: React.FC = () => {
+  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, serverStatus, setServerStatus, systemInfo, setSystemInfo, installationModes, setInstallationModes } = useWizardContext();
+  const stepStatusesRef = useRef(stepStatuses);
+  const currentStatusRef = useRef(currentStatus);
+  // Update ref when stepStatuses changes
+  useEffect(() => {
+    stepStatusesRef.current = stepStatuses;
+  }, [stepStatuses]);
+  // Update ref when currentStatus changes
+  useEffect(() => {
+    currentStatusRef.current = currentStatus;
+  }, [currentStatus]);
+
+  const REFETCH_MODELS_INTERVAL_MS = 1500;
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const payload = event.data;
+      const command: string | undefined = payload.command;
+      if (!command) {
+        return;
       }
-      return newStatuses;
-    });
-  };
+      const currStepStatuses = stepStatusesRef.current;
+      const currStatus = currentStatusRef.current;
+      switch (command) {
+        case "init": {
+          const data = payload.data;
+          setInstallationModes(data.installModes);
+          setSystemInfo(data.systemInfo);
+          break;
+        }
+        case "status": {
+          const data = payload.data;
+          //console.log("received status " + JSON.stringify(data));
+          //console.log("Current status " + currStatus);
+          setServerStatus(data.serverStatus);
+          const newStepStatuses = [...currStepStatuses];
+          if (data.serverStatus !== ServerStatus.started) {
+            //(re)set all step statuses if ollama is not started
+            newStepStatuses.fill('missing');
+          } else {
+            //Ollama finished starting
+            if (newStepStatuses[OLLAMA_STEP] !== 'complete') {
+              //Set Ollama step as complete
+              newStepStatuses[OLLAMA_STEP] = 'complete';
+              //Activate Models step if it's not complete
+              if (newStepStatuses[MODELS_STEP] !== 'complete') {
+                setActiveStep(MODELS_STEP);
+              }
+            }
+            if (currStatus === WizardStatus.downloadingOllama || currStatus === WizardStatus.startingOllama) {
+              setCurrentStatus(WizardStatus.idle);
+            }
+          }
+          setStepStatuses(newStepStatuses);
+          break;
+        }
+        case "pullmodels": {
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveStep(prev => Math.min(prev + 1, 2));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveStep(prev => Math.max(prev - 1, 0));
-    }
-  };
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    init(); // fetch system info once //FIXME diskspace can vary over time, might be moved to requestStatus()
+    requestStatus(); // check ollama and models statuses
+    const intervalId = setInterval(//Poll for ollama and models status updates
+      requestStatus,
+      REFETCH_MODELS_INTERVAL_MS
+    );
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
+
 
   const steps = [
-    {
-      component: OllamaInstallStep,
-      title: "Download and install Ollama",
-    },
-    {
-      component: ModelSelectionStep,
-      title: "Download a Granite model",
-    },
-    {
-      component: StartLocalAIStep,
-      title: "Start using local AI",
-    }
+    { component: OllamaInstallStep, title: 'Download and install Ollama' },
+    { component: ModelSelectionStep, title: 'Download a Granite model' },
+    { component: StartLocalAIStep, title: 'Start using local AI' },
   ];
 
   return (
-    <div 
-      className="h-full w-full"
-      onKeyDown={handleKeyDown}
-      role="tablist"
-    >
+    <div className="h-full w-full" role="tablist">
       <div className="p-8 max-w-2xl mx-auto">
-        <h1 className="text-4xl font-light mb-2" style={{ color: 'var(--vscode-foreground)' }}>Granite.Code</h1>
-        <h2 className="text-2xl font-light mb-2" style={{ color: 'var(--vscode-editor-foreground)' }}>Local AI setup</h2>
+        <h1 className="text-4xl font-light mb-2" style={{ color: 'var(--vscode-foreground)' }}>
+          Granite.Code
+        </h1>
+        <h2 className="text-2xl font-light mb-2" style={{ color: 'var(--vscode-editor-foreground)' }}>
+          Local AI setup
+        </h2>
         <p className="mb-8" style={{ color: 'var(--vscode-descriptionForeground)' }}>
           Follow these simple steps to start using local AI.
         </p>
@@ -328,13 +475,10 @@ export const GraniteWizard: React.FC = () => {
             return (
               <StepComponent
                 key={step.title}
-                isActive={activeStep === index}
-                onClick={() => setActiveStep(index)}
                 status={stepStatuses[index]}
+                isActive={activeStep === index}
                 title={step.title}
-                onComplete={() => handleStepComplete(index)}
-                onStatusChange={(status) => handleStepStatusChange(index, status)}
-                onNext={() => setActiveStep(index + 1)}
+                onClick={() => {setActiveStep(index)}}
               />
             );
           })}

@@ -1,5 +1,12 @@
 import * as fs from 'fs';
 import { env } from 'process';
+
+import { ConfigHandler } from 'core/config/ConfigHandler';
+import { ConfiguredModels } from 'core/granite/commons/configuredModels';
+import { isDevMode } from 'core/granite/commons/constants';
+import { DOWNLOADABLE_MODELS } from 'core/granite/commons/modelRequirements';
+import { ProgressData } from "core/granite/commons/progressData";
+import { ModelStatus, ServerStatus } from 'core/granite/commons/statuses';
 import {
   CancellationError,
   commands,
@@ -12,11 +19,7 @@ import {
   WebviewPanel,
   window
 } from "vscode";
-import { isDevMode } from 'core/granite/commons/constants';
-import { ConfiguredModels } from 'core/granite/commons/configuredModels';
-import { DOWNLOADABLE_MODELS } from 'core/granite/commons/modelRequirements';
-import { ProgressData } from "core/granite/commons/progressData";
-import { ModelStatus, ServerStatus } from 'core/granite/commons/statuses';
+
 import { IModelServer } from '../modelServer';
 import { MockServer } from '../ollama/mockServer';
 import { OllamaServer } from "../ollama/ollamaServer";
@@ -24,7 +27,7 @@ import { Telemetry } from '../telemetry';
 import { getNonce } from "../utils/getNonce";
 import { getUri } from "../utils/getUri";
 import { getSystemInfo } from "../utils/sysUtils";
-import { ConfigHandler } from 'core/config/ConfigHandler';
+
 
 /**
  * This class manages the state and behavior of HelloWorld webview panels.
@@ -144,6 +147,7 @@ export class SetupGranitePage {
         {
           // Enable JavaScript in the webview
           enableScripts: true,
+          retainContextWhenHidden: true,
           // Restrict the webview to only load resources from the `gui/assets` directory
           localResourceRoots: [
             Uri.joinPath(extensionUri, "gui/assets"),
@@ -188,7 +192,7 @@ export class SetupGranitePage {
 
     let stylesUri, scriptUri;
 
-    if (context.extensionMode == ExtensionMode.Development) {
+    if (context.extensionMode === ExtensionMode.Development) {
       scriptUri = "http://localhost:5173/src/granite/indexSetupGranite.tsx";
       stylesUri = "http://localhost:5173/src/granite/indexSetupGranite.css";
     } else {
@@ -213,7 +217,7 @@ export class SetupGranitePage {
     const devStyleSrc = inDevelopmentMode ?  "http://localhost:5173" : "";
     const devConnectSrc = inDevelopmentMode ?  "ws://localhost:5173" : "";
 
-    const nonce = getNonce()
+    const nonce = getNonce();
     // Tip: Install the es6-string-html VS Code extension to enable code highlighting below
     return /*html*/ `
       <!DOCTYPE html>
@@ -280,6 +284,9 @@ export class SetupGranitePage {
           case "installOllama":
             await this.server.installServer(data.mode);
             break;
+          case "showTutorial":
+            await this.showTutorial();
+            break;
           case "fetchStatus":
             const now = new Date().getTime();
             // Careful here, we're receiving 2 messages in Dev mode on useEffect, because <App> is wrapped with <React.StrictMode>
@@ -340,27 +347,28 @@ export class SetupGranitePage {
     let tabAutocompleteModel = null;
 
     for (const model of config.models) {
-      if (model.providerName == "ollama") {
+      if (model.providerName === "ollama") {
         chatModel = model.model;
         break;
       }
     }
 
     for (const model of config.tabAutocompleteModels ?? []) {
-      if (model.providerName == "ollama") {
+      if (model.providerName === "ollama") {
         tabAutocompleteModel = model.model;
         break;
       }
     }
 
-    if (config.embeddingsProvider.providerName == "ollama")
+    if (config.embeddingsProvider.providerName === "ollama") {
       embeddingsModel = config.embeddingsProvider.model;
+    }
 
     return {
       chat: chatModel,
       tabAutocomplete: tabAutocompleteModel,
       embeddings: embeddingsModel,
-    }
+    };
   }
 
   async getModelStatuses(): Promise<Map<string, ModelStatus>> {
@@ -458,6 +466,10 @@ export class SetupGranitePage {
 
     // Display Continue Chat UI next
     await commands.executeCommand("continue.continueGUIView.focus");
+    await this.showTutorial();
+  }
+
+  async showTutorial() {
     await commands.executeCommand("granite.showTutorial");
   }
 

@@ -100,13 +100,13 @@ export class OllamaServer implements IModelServer {
       ].join(' ; ');
     } else if (isMac()) {
       startCommand = [
-        'set -e',  // Exit immediately if a command exits with a non-zero status
+        //'set -e',  // Exit immediately if a command exits with a non-zero status
         'open -a Ollama.app',
       ].join(' && ');
     } else {//Linux
       const start_ollama_sh = path.join(this.context.extensionPath, 'start_ollama.sh');
       startCommand = [
-        'set -e',  // Exit immediately if a command exits with a non-zero status
+        //'set -e',  // Exit immediately if a command exits with a non-zero status
         `chmod +x "${start_ollama_sh}"`,  // Ensure the script is executable
         `"${start_ollama_sh}"`,  // Use quotes in case the path contains spaces
       ].join(' && ');

@@ -5,9 +5,14 @@ import { StatusCheck, StatusValue } from './StatusCheck';
 import { ServerStatus } from 'core/granite/commons/statuses';
 import { VSCodeButton } from '../components/VSCodeButton';
 import './GraniteWizard.css';
-import { SystemInfo } from 'core/granite/commons/sysInfo';
+import { isHighEndMachine, SystemInfo } from 'core/granite/commons/sysInfo';
 import { vscode } from './utils/vscode';
-import { current } from '@reduxjs/toolkit';
+
+// const originalLog = console.log;
+// console.log = (...args: any[]) => {
+//   const timestamp = new Date().toISOString();
+//   originalLog(`[${timestamp}]`, ...args);
+// };
 
 interface InstallationMode {
   id: string;
@@ -26,6 +31,8 @@ enum WizardStatus {
   downloadingModel
 }
 
+type RecommendedModel = "large" | "small";
+
 interface WizardContextProps {
   currentStatus: WizardStatus;
   setCurrentStatus: React.Dispatch<React.SetStateAction<WizardStatus>>;
@@ -39,6 +46,10 @@ interface WizardContextProps {
   setSystemInfo: React.Dispatch<React.SetStateAction<SystemInfo | null>>;
   installationModes: InstallationMode[];
   setInstallationModes: React.Dispatch<React.SetStateAction<InstallationMode[]>>;
+  recommendedModel: RecommendedModel;
+  setRecommendedModel: React.Dispatch<React.SetStateAction<RecommendedModel>>;
+  selectedModel: RecommendedModel;
+  setSelectedModel: React.Dispatch<React.SetStateAction<RecommendedModel>>;
 }
 
 const WizardContext = createContext<WizardContextProps | undefined>(undefined);
@@ -62,18 +73,21 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [serverStatus, setServerStatus] = useState<ServerStatus>(ServerStatus.unknown);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [installationModes, setInstallationModes] = useState<InstallationMode[]>([]);
+  const [recommendedModel, setRecommendedModel] = useState<RecommendedModel>("small");
+  const [selectedModel, setSelectedModel] = useState<RecommendedModel>(recommendedModel);
+
 
   return (
-    <WizardContext.Provider value={{ currentStatus, setCurrentStatus, activeStep, setActiveStep, stepStatuses, setStepStatuses, serverStatus, setServerStatus, systemInfo, setSystemInfo, installationModes, setInstallationModes }}>
+    <WizardContext.Provider value={{ currentStatus, setCurrentStatus, activeStep, setActiveStep, stepStatuses, setStepStatuses, serverStatus, setServerStatus, systemInfo, setSystemInfo, installationModes, setInstallationModes, recommendedModel, setRecommendedModel, selectedModel, setSelectedModel }}>
       {children}
     </WizardContext.Provider>
   );
 };
 
 interface ModelOption {
+  key: RecommendedModel;
   name: string;
   description: string;
-  recommended?: boolean;
 }
 
 interface StepProps {
@@ -173,8 +187,7 @@ if (serverStatus === ServerStatus.started) {
 };
 
 const ModelSelectionStep: React.FC<StepProps> = (props) => {
-  const { serverStatus } = useWizardContext();
-  const [selectedModel, setSelectedModel] = useState<string>('large');
+  const { serverStatus, recommendedModel, selectedModel, setSelectedModel } = useWizardContext();
   const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'complete'>('idle');
   const [progress, setProgress] = useState(0);
   const progressInterval = useRef<NodeJS.Timeout>();
@@ -218,11 +231,12 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
 
   const modelOptions: ModelOption[] = [
     {
+      key: 'large',
       name: 'Large',
       description: 'For machines with 32GB of memory and a fast GPU',
-      recommended: true,
     },
     {
+      key: 'small',
       name: 'Small',
       description: 'For machines with less than 32GB of memory and slow graphics',
     },
@@ -239,8 +253,8 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
             <div className="space-y-4">
               {modelOptions.map((option) => (
                 <RadioGroup.Option
-                  key={option.name.toLowerCase()}
-                  value={option.name.toLowerCase()}
+                  key={option.key}
+                  value={option.key}
                   className="relative flex cursor-pointer rounded focus:outline-none"
                 >
                   {({ checked }) => (
@@ -259,7 +273,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
                         <RadioGroup.Description className="text-sm leading-normal" style={{ color: 'var(--vscode-editor-foreground)', opacity: 0.8 }}>
                           {option.description}
                         </RadioGroup.Description>
-                        {option.recommended && (
+                        {option.key === recommendedModel && (
                           <p className="text-sm leading-normal" style={{ color: 'var(--vscode-editorWarning-foreground, #ddb100)' }}>
                             Recommended for your machine
                           </p>
@@ -374,7 +388,7 @@ function init(): void {
 }
 
 const WizardContent: React.FC = () => {
-  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, serverStatus, setServerStatus, systemInfo, setSystemInfo, installationModes, setInstallationModes } = useWizardContext();
+  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel } = useWizardContext();
   const stepStatusesRef = useRef(stepStatuses);
   const currentStatusRef = useRef(currentStatus);
   // Update ref when stepStatuses changes
@@ -401,7 +415,11 @@ const WizardContent: React.FC = () => {
         case "init": {
           const data = payload.data;
           setInstallationModes(data.installModes);
-          setSystemInfo(data.systemInfo);
+          const sysinfo = data.systemInfo as SystemInfo;
+          setSystemInfo(sysinfo);
+          const recommendedModel = isHighEndMachine(sysinfo) ? "large" : "small";
+          setRecommendedModel(recommendedModel);
+          setSelectedModel(recommendedModel);
           break;
         }
         case "status": {

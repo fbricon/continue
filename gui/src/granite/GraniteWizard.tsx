@@ -161,15 +161,15 @@ if (serverStatus === ServerStatus.started) {
   );
 } else if (serverStatus === ServerStatus.stopped) {
   serverButton = (
-    // TODO let user choose between installing manually or automatically (via homebrew/script/installer)
+    // TODO let user choose between installing manually or automatically (via homebrew/script/installer)?
     <VSCodeButton onClick={handleStartOllama}>
-      Start Ollama...
+      Start Ollama
     </VSCodeButton>
   );
 } else {
   serverButton = (
     <VSCodeButton onClick={handleDownload}>
-      Download Ollama...
+      Download Ollama
     </VSCodeButton>
   );
 }
@@ -477,10 +477,10 @@ const WizardContent: React.FC = () => {
   return (
     <div className="h-full w-full" role="tablist">
       <div className="p-8 max-w-2xl mx-auto">
-        <h1 className="text-4xl font-light mb-2" style={{ color: 'var(--vscode-foreground)' }}>
+        <h2 className="text-3xl font-normal mb-2" style={{ color: 'var(--vscode-foreground)' }}>
           Granite.Code
-        </h1>
-        <h2 className="text-2xl font-light mb-2" style={{ color: 'var(--vscode-editor-foreground)' }}>
+        </h2>
+        <h2 className="text-2xl font-light mb-1" style={{ color: 'var(--vscode-foreground)' }}>
           Local AI setup
         </h2>
         <p className="mb-8" style={{ color: 'var(--vscode-descriptionForeground)' }}>

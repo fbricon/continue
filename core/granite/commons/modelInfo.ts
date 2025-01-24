@@ -1,27 +1,29 @@
+import { GB, MB } from "./sizeUtils";
+
 export const DEFAULT_MODEL_INFO = new Map<string, ModelInfo>();
 [{
   id: 'nomic-embed-text:latest',
-  size: '274MB',
+  size: 274*MB,
   digest: ''
 },
 {
   id: 'granite3.1-dense:2b',
-  size: '1.5GB',
+  size: 1.5*GB,
   digest: ''
 },
 {
   id: 'granite3.1-dense:8b',
-  size: '4.9GB',
+  size: 4.9*GB,
   digest: ''
 },
 {
   id: 'granite-code:3b',
-  size: '2GB',
+  size: 2*GB,
   digest: ''
 },
 {
   id: 'granite-code:8b',
-  size: '4GB',
+  size: 4*GB,
   digest: ''
 }
 ].forEach((m: ModelInfo) => {
@@ -30,6 +32,6 @@ export const DEFAULT_MODEL_INFO = new Map<string, ModelInfo>();
 
 export interface ModelInfo {
   id: string;
-  size: string;
+  size: number;
   digest: string;
 }

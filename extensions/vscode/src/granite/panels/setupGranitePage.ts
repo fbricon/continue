@@ -9,6 +9,7 @@ import { ProgressData } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from 'core/granite/commons/statuses';
 import {
   CancellationError,
+  CancellationTokenSource,
   commands,
   Disposable,
   ExtensionContext,
@@ -27,6 +28,7 @@ import { Telemetry } from '../telemetry';
 import { getNonce } from "../utils/getNonce";
 import { getUri } from "../utils/getUri";
 import { getSystemInfo } from "../utils/sysUtils";
+import { cat } from 'core/vendor/modules/@xenova/transformers';
 
 
 /**
@@ -53,7 +55,7 @@ export class SetupGranitePage {
   private readonly _panel: WebviewPanel;
   private _disposables: Disposable[] = [];
   private _fileWatcher: fs.FSWatcher | undefined;
-  private server: IModelServer;
+  private server: OllamaServer;
   /**
    * The HelloWorldPanel class private constructor (called only from the render method).
    *
@@ -167,7 +169,7 @@ export class SetupGranitePage {
 
     // Dispose of the current webview panel
     this._panel.dispose();
-
+    this.modelInstallCanceller?.dispose();
     // Dispose of all disposables (including the file watcher)
     while (this._disposables.length) {
       const disposable = this._disposables.pop();
@@ -260,7 +262,7 @@ export class SetupGranitePage {
    * @param context A reference to the extension context
    */
   private debounceStatus = 0;
-
+  private modelInstallCanceller: CancellationTokenSource | undefined;
   private _setWebviewMessageListener(webview: Webview) {
 
     webview.onDidReceiveMessage(
@@ -287,6 +289,10 @@ export class SetupGranitePage {
           case "showTutorial":
             await this.showTutorial();
             break;
+          case "cancelModelInstallation":
+            console.log("Cancelling model installation");
+            this.modelInstallCanceller?.cancel();
+            break;
           case "fetchStatus":
             const now = new Date().getTime();
             // Careful here, we're receiving 2 messages in Dev mode on useEffect, because <App> is wrapped with <React.StrictMode>
@@ -303,32 +309,30 @@ export class SetupGranitePage {
 
             this.publishStatus(webview);
             break;
-          case "setupGranite":
+          case "installModels":
+            console.log("Installing models");
             async function reportProgress(progress: ProgressData) {
               webview.postMessage({
-                command: "pull-progress",
+                command: "modelInstallationProgress",
                 data: {
                   progress,
                 },
               });
             }
-            webview.postMessage({
-              command: "page-update",
-              data: {
-                installing: true
-              },
-            });
+            this.modelInstallCanceller?.dispose();
+            this.modelInstallCanceller = new CancellationTokenSource();
             try {
-              await this.setupGranite(data as GraniteConfiguration, reportProgress, webview);
-            } finally {
+              const selectedModel = data.model as string;
+              await this.server.pullModels(selectedModel, this.modelInstallCanceller.token, reportProgress);
+            } catch (error: any) {
+              console.error("Error during model installation", error);
               webview.postMessage({
-                command: "page-update",
+                command: "modelInstallationProgress",
                 data: {
-                  installing: false
+                  error: error.message,
                 },
               });
             }
-            return;
         }
       },
       undefined,

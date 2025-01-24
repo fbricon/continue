@@ -1,17 +1,17 @@
 import os from "os";
 import path from 'path';
-import { CancellationError, env, ExtensionContext, Progress, ProgressLocation, Uri, window } from "vscode";
+import { CancellationError, CancellationToken, env, ExtensionContext, Progress, ProgressLocation, Uri, window } from "vscode";
 import { EXTENSION_ID } from "core/granite/commons/constants";
 import { DEFAULT_MODEL_INFO, ModelInfo } from "core/granite/commons/modelInfo";
 import { getStandardName } from "core/granite/commons/naming";
-import { ProgressData } from "core/granite/commons/progressData";
+import { ProgressData, ProgressReporter } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from "core/granite/commons/statuses";
-import { AiAssistantConfigurator } from "../configureAssistant";
 import { IModelServer } from "../modelServer";
 import { terminalCommandRunner } from "../terminal/terminalCommandRunner";
 import { executeCommand } from "../utils/cpUtils";
 import { downloadFileFromUrl } from "../utils/downloadUtils";
 import { getRemoteModelInfo } from "./ollamaLibrary";
+import { DEFAULT_MODEL_GRANITE_LARGE, DEFAULT_MODEL_GRANITE_SMALL } from "core/config/default";
 
 const PLATFORM = os.platform();
 
@@ -268,6 +268,80 @@ export class OllamaServer implements IModelServer {
     console.log(`${modelName} was pulled`);
   }
 
+
+
+  async pullModels(type: string, token: CancellationToken, reportProgress: (progress: ProgressData) => void): Promise<boolean> {
+    const graniteModel = (type === 'large') ? DEFAULT_MODEL_GRANITE_LARGE : DEFAULT_MODEL_GRANITE_SMALL;
+    const models: string[] = [graniteModel.model, 'nomic-embed-text:latest'];
+    const abortController = new AbortController();
+    token.onCancellationRequested(() => {
+      abortController.abort();
+    });
+
+    const modelInfos: ModelInfo[] = [];
+    const signal = abortController.signal;
+    for (const model of models) {
+      if (token.isCancellationRequested) {
+        return false;
+      }
+      const modelInfo = await this.fetchModelInfo(model, signal);
+      if (!modelInfo) {
+        throw new Error(`Failed to fetch ${model} manifest`);
+      }
+      modelInfos.push(modelInfo);
+    }
+    const expectedTotal = modelInfos.reduce((sum, modelInfo) => sum + modelInfo.size, 0);
+    console.log(`Expected total: ${expectedTotal}`);
+    const progressReporter = new ModelPullProgressReporter(expectedTotal, reportProgress);
+    for (const modelInfo of modelInfos) {
+      if (token.isCancellationRequested) {
+        return false;
+      }
+      await this._pullModel(modelInfo.id, progressReporter, signal);
+    }
+    return true;
+  }
+
+  async _pullModel(modelName: string, progressReporter: ProgressReporter, signal?: AbortSignal): Promise<void> {
+    console.log(`Pulling ${modelName}`);
+    const response = await fetch(`${this.serverUrl}/api/pull`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: modelName }),
+      signal,
+    });
+    const reader = response.body?.getReader();
+    let currentProgress = 0;
+
+    while (true) {
+      const { done, value } = await reader?.read() || { done: true, value: undefined };
+      if (done) {
+        break;
+      }
+
+      const chunk = new TextDecoder().decode(value);
+      const lines = chunk.split('\n').filter(Boolean);
+
+      for (const line of lines) {
+        const data = JSON.parse(line);
+        //console.log(data);
+        if (data.total) {
+          console.log(data);
+          const completed = data.completed ? data.completed : 0;
+          if (completed < currentProgress) {
+            currentProgress = 0;
+          }
+          const increment = completed - currentProgress;
+          progressReporter.update(`Pulling ${modelName}`, increment);
+          currentProgress = completed;
+        }
+      }
+    }
+  }
+
+
   async pullModel(modelName: string, reportProgress: (progress: ProgressData) => void): Promise<void> {
     return window.withProgress(
       {
@@ -378,9 +452,9 @@ export class OllamaServer implements IModelServer {
     return modelInfo || DEFAULT_MODEL_INFO.get(modelName);
   }
 
-  private async fetchModelInfo(modelName: string): Promise<ModelInfo | undefined> {
+  private async fetchModelInfo(modelName: string, signal?: AbortSignal): Promise<ModelInfo | undefined> {
     try {
-      const modelInfo = await getRemoteModelInfo(modelName);
+      const modelInfo = await getRemoteModelInfo(modelName, signal);
       this.modelInfoResults.set(modelName, modelInfo);
       return modelInfo;
     } catch (error) {
@@ -418,4 +492,19 @@ function isMac(): boolean {
 function isDevspaces() {
   //sudo is not available on Red Hat DevSpaces
   return process.env['DEVWORKSPACE_ID'] !== undefined;
+}
+
+class ModelPullProgressReporter implements ProgressReporter {
+  private currentProgress = 0;
+  constructor(private total: number, private progress: (progress: ProgressData) => void) { }
+  update(name: string, work: number): void {
+    this.currentProgress += work;
+    this.progress({
+      key: name,
+      increment: work,
+      status: 'Downloading',
+      completed: this.currentProgress,
+      total: this.total
+    });
+  }
 }

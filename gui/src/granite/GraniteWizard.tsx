@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
+import React, { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
 import { RadioGroup } from '@headlessui/react';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { StatusCheck, StatusValue } from './StatusCheck';
@@ -7,12 +7,7 @@ import { VSCodeButton } from '../components/VSCodeButton';
 import './GraniteWizard.css';
 import { isHighEndMachine, SystemInfo } from 'core/granite/commons/sysInfo';
 import { vscode } from './utils/vscode';
-
-// const originalLog = console.log;
-// console.log = (...args: any[]) => {
-//   const timestamp = new Date().toISOString();
-//   originalLog(`[${timestamp}]`, ...args);
-// };
+import { ProgressData } from 'core/granite/commons/progressData';
 
 interface InstallationMode {
   id: string;
@@ -31,7 +26,8 @@ enum WizardStatus {
   downloadingModel
 }
 
-type RecommendedModel = "large" | "small";
+type ModelType = "large" | "small";
+
 
 interface WizardContextProps {
   currentStatus: WizardStatus;
@@ -46,10 +42,16 @@ interface WizardContextProps {
   setSystemInfo: React.Dispatch<React.SetStateAction<SystemInfo | null>>;
   installationModes: InstallationMode[];
   setInstallationModes: React.Dispatch<React.SetStateAction<InstallationMode[]>>;
-  recommendedModel: RecommendedModel;
-  setRecommendedModel: React.Dispatch<React.SetStateAction<RecommendedModel>>;
-  selectedModel: RecommendedModel;
-  setSelectedModel: React.Dispatch<React.SetStateAction<RecommendedModel>>;
+  recommendedModel: ModelType;
+  setRecommendedModel: React.Dispatch<React.SetStateAction<ModelType>>;
+  selectedModel: ModelType;
+  setSelectedModel: React.Dispatch<React.SetStateAction<ModelType>>;
+  modelStatus: StatusValue;
+  setModelStatus: React.Dispatch<React.SetStateAction<StatusValue>>;
+  modelInstallationProgress: number;
+  setModelInstallationProgress: React.Dispatch<React.SetStateAction<number>>;
+  modelInstallationStatus: "idle" | "downloading" | "complete";
+  setModelInstallationStatus: React.Dispatch<React.SetStateAction<"idle" | "downloading" | "complete">>;
 }
 
 const WizardContext = createContext<WizardContextProps | undefined>(undefined);
@@ -71,21 +73,35 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [currentStatus, setCurrentStatus] = useState<WizardStatus>(WizardStatus.idle);
   const [stepStatuses, setStepStatuses] = useState<StatusValue[]>(['missing', 'missing', 'missing']);
   const [serverStatus, setServerStatus] = useState<ServerStatus>(ServerStatus.unknown);
+  const [modelStatus, setModelStatus] = useState<StatusValue>('missing');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [installationModes, setInstallationModes] = useState<InstallationMode[]>([]);
-  const [recommendedModel, setRecommendedModel] = useState<RecommendedModel>("small");
-  const [selectedModel, setSelectedModel] = useState<RecommendedModel>(recommendedModel);
-
+  const [recommendedModel, setRecommendedModel] = useState<ModelType>("small");
+  const [selectedModel, setSelectedModel] = useState<ModelType>(recommendedModel);
+  const [modelInstallationProgress, setModelInstallationProgress] = useState<number>(0);
+  const [modelInstallationStatus, setModelInstallationStatus] = useState<"idle" | "downloading" | "complete">("idle");
 
   return (
-    <WizardContext.Provider value={{ currentStatus, setCurrentStatus, activeStep, setActiveStep, stepStatuses, setStepStatuses, serverStatus, setServerStatus, systemInfo, setSystemInfo, installationModes, setInstallationModes, recommendedModel, setRecommendedModel, selectedModel, setSelectedModel }}>
+    <WizardContext.Provider value={{
+      currentStatus, setCurrentStatus,
+      activeStep, setActiveStep,
+      stepStatuses, setStepStatuses,
+      serverStatus, setServerStatus,
+      systemInfo, setSystemInfo,
+      installationModes, setInstallationModes,
+      recommendedModel, setRecommendedModel,
+      selectedModel, setSelectedModel,
+      modelStatus, setModelStatus,
+      modelInstallationProgress, setModelInstallationProgress,
+      modelInstallationStatus, setModelInstallationStatus,
+    }}>
       {children}
     </WizardContext.Provider>
   );
 };
 
 interface ModelOption {
-  key: RecommendedModel;
+  key: ModelType;
   name: string;
   description: string;
 }
@@ -96,12 +112,9 @@ interface StepProps {
   status: StatusValue;
   title: string;
   children?: React.ReactNode;
-  onComplete?: () => void;
-  onStatusChange?: (status: StatusValue) => void;
-  onNext?: () => void;
 }
 
-const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, children, onComplete, onStatusChange, onNext }) => {
+const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, children }) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       onClick?.();
@@ -187,38 +200,25 @@ if (serverStatus === ServerStatus.started) {
 };
 
 const ModelSelectionStep: React.FC<StepProps> = (props) => {
-  const { serverStatus, recommendedModel, selectedModel, setSelectedModel } = useWizardContext();
-  const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'complete'>('idle');
-  const [progress, setProgress] = useState(0);
+  const { serverStatus, recommendedModel, selectedModel, setSelectedModel, modelInstallationProgress, setModelInstallationProgress, modelInstallationStatus, setModelInstallationStatus } = useWizardContext();
   const progressInterval = useRef<NodeJS.Timeout>();
 
   const startDownload = () => {
-    setDownloadState('downloading');
-    //setProgress(0);
-
-    progressInterval.current = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(progressInterval.current);
-          setDownloadState('complete');
-          if (props.onStatusChange) {
-            props.onStatusChange('complete');
-          }
-          if (props.onComplete) {
-            setTimeout(props.onComplete, 500);
-          }
-          return 100;
-        }
-        return prev + 2;
-      });
-    }, 100);
+    setModelInstallationStatus('downloading');
+    vscode.postMessage({
+      command: "installModels",
+      data: {
+        model: selectedModel,
+      },
+    });
   };
 
   const cancelDownload = () => {
-    if (progressInterval.current) {
-      clearInterval(progressInterval.current);
-    }
-    setDownloadState('idle');
+    vscode.postMessage({
+      command: "cancelModelInstallation",
+    });
+    setModelInstallationStatus('idle');
+    setModelInstallationProgress(0);
   };
 
   useEffect(() => { //Clear progress interval on unmount
@@ -249,7 +249,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
           <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
             Select which model you want to use. You can change this preference in the settings.
           </p>
-          <RadioGroup value={selectedModel} onChange={setSelectedModel} className="mt-4" disabled={downloadState !== 'idle'}>
+          <RadioGroup value={selectedModel} onChange={setSelectedModel} className="mt-4" disabled={modelInstallationStatus !== 'idle'}>
             <div className="space-y-4">
               {modelOptions.map((option) => (
                 <RadioGroup.Option
@@ -287,17 +287,24 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
           </RadioGroup>
 
           <div className="mt-4 flex items-center gap-2">
+            {modelInstallationStatus !== 'complete' && (
             <VSCodeButton
               onClick={startDownload}
-              disabled={serverStatus !== ServerStatus.started && downloadState !== 'idle'}
-              variant={downloadState === "complete"? "secondary": "primary"}
+              disabled={serverStatus !== ServerStatus.started && modelInstallationStatus !== 'idle'}
+              variant="primary"
             >
-              {downloadState === 'idle' ? 'Download' :
-               downloadState === 'downloading' ? 'Downloading...' :
-               'Complete!'}
+              {modelInstallationStatus === 'idle' ? 'Download' : 'Downloading...'}
             </VSCodeButton>
-
-            {downloadState === 'downloading' && (
+            )}
+            {modelInstallationStatus === 'complete' && (
+            <VSCodeButton
+              disabled={true}
+              variant="secondary"
+            >
+               Complete!
+            </VSCodeButton>
+            )}
+            {modelInstallationStatus === 'downloading' && (
               <>
                 <VSCodeButton
                   variant="secondary"
@@ -305,21 +312,32 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
                 >
                   Cancel
                 </VSCodeButton>
-                <span className="ml-2 text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
-                  {progress}% complete
-                </span>
+
+                <div //following code soup is to minimize text wiggling during progress updates
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    alignItems: 'center',
+                    opacity: 0.8
+                  }}
+                >
+                  <span className="inline-block text-right w-[55px] [font-variant-numeric:tabular-nums]">
+                    {modelInstallationProgress.toFixed(2)}%
+                  </span>
+                  <span className="ml-1">complete</span>
+                </div>
               </>
             )}
           </div>
 
-          {selectedModel === 'large' && (
+          {/* {selectedModel === 'large' && (
             <div className="mt-4 flex items-start space-x-2">
               <ExclamationTriangleIcon className="h-4 w-4 mt-0.5" style={{ color: 'var(--vscode-errorForeground, #f48771)' }} aria-hidden="true" />
               <span className="text-sm" style={{ color: 'var(--vscode-errorForeground, #f48771)' }}>
                 Insufficient disk space available
               </span>
             </div>
-          )}
+          )} */}
           {serverStatus !== ServerStatus.started && (
             <div className="mt-4 flex items-start space-x-2">
               <ExclamationTriangleIcon className="h-4 w-4 mt-0.5" style={{ color: 'var(--vscode-errorForeground, #f48771)' }} aria-hidden="true" />
@@ -388,7 +406,7 @@ function init(): void {
 }
 
 const WizardContent: React.FC = () => {
-  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel } = useWizardContext();
+  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel, modelInstallationProgress ,setModelInstallationProgress, setModelInstallationStatus } = useWizardContext();
   const stepStatusesRef = useRef(stepStatuses);
   const currentStatusRef = useRef(currentStatus);
   // Update ref when stepStatuses changes
@@ -424,8 +442,6 @@ const WizardContent: React.FC = () => {
         }
         case "status": {
           const data = payload.data;
-          //console.log("received status " + JSON.stringify(data));
-          //console.log("Current status " + currStatus);
           setServerStatus(data.serverStatus);
           const newStepStatuses = [...currStepStatuses];
           if (data.serverStatus !== ServerStatus.started) {
@@ -448,7 +464,29 @@ const WizardContent: React.FC = () => {
           setStepStatuses(newStepStatuses);
           break;
         }
-        case "pullmodels": {
+        case "modelInstallationProgress": {
+          const progress = payload.data?.progress as ProgressData | undefined;
+          if (progress) {
+            const progressPercentage = (progress.completed! / progress.total!) * 100;
+            setModelInstallationProgress(progressPercentage);
+            console.log("Model installation progress: " + progressPercentage);
+            if (Number(progressPercentage.toFixed(4)) >= 100) {//FIXME: don't rely on percentage
+              setStepStatuses(prevStatuses => {
+                const newStatuses = [...prevStatuses];
+                newStatuses[MODELS_STEP] = 'complete';
+                return newStatuses;
+              });
+              setTimeout(() => {//Wait a bit before setting status to complete
+                setModelInstallationStatus('complete');
+                setTimeout(() => setActiveStep(FINAL_STEP), 250);
+              }, 250);
+            }
+          }
+          const error = payload.data?.error as string | undefined;
+          if (error) {
+            console.error("Model installation error: " + error);
+            setModelInstallationProgress(0);
+          }
 
         }
       }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
 import { RadioGroup } from '@headlessui/react';
-import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { ExclamationCircleIcon, ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import { StatusCheck, StatusValue } from './StatusCheck';
 import { ServerStatus } from 'core/granite/commons/statuses';
 import { VSCodeButton } from '../components/VSCodeButton';
@@ -52,6 +52,8 @@ interface WizardContextProps {
   setModelInstallationProgress: React.Dispatch<React.SetStateAction<number>>;
   modelInstallationStatus: "idle" | "downloading" | "complete";
   setModelInstallationStatus: React.Dispatch<React.SetStateAction<"idle" | "downloading" | "complete">>;
+  isOffline: boolean;
+  setIsOffline: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const WizardContext = createContext<WizardContextProps | undefined>(undefined);
@@ -80,6 +82,7 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [selectedModel, setSelectedModel] = useState<ModelType>(recommendedModel);
   const [modelInstallationProgress, setModelInstallationProgress] = useState<number>(0);
   const [modelInstallationStatus, setModelInstallationStatus] = useState<"idle" | "downloading" | "complete">("idle");
+  const [isOffline, setIsOffline] = useState(false);
 
   return (
     <WizardContext.Provider value={{
@@ -94,6 +97,8 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
       modelStatus, setModelStatus,
       modelInstallationProgress, setModelInstallationProgress,
       modelInstallationStatus, setModelInstallationStatus,
+      isOffline,
+      setIsOffline,
     }}>
       {children}
     </WizardContext.Provider>
@@ -143,8 +148,24 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
   );
 };
 
+const DiagnosticMessage: React.FC<{
+  type: 'warning' | 'info' | 'error';
+  message: string;
+}> = ({ type, message }) => {
+  const color = (type === 'warning') ? 'var(--vscode-editorWarning-foreground, #f48771)' : (type === 'info') ? 'var(--vscode-editorInfo-foreground)' : 'var(--vscode-editorError-foreground)';
+  const Icon = (type === 'warning') ? ExclamationTriangleIcon : (type === 'info') ? InformationCircleIcon : ExclamationCircleIcon;
+  return (
+    <div className="mt-4 flex items-start space-x-2">
+      <Icon className="h-4 w-4 mt-0.5" style={{ color }} aria-hidden="true" />
+      <span className="text-sm">
+        {message}
+      </span>
+    </div>
+  );
+};
+
 const OllamaInstallStep: React.FC<StepProps> = (props) => {
-  const { serverStatus, installationModes, setCurrentStatus } = useWizardContext();
+  const { serverStatus, installationModes, setCurrentStatus, isOffline } = useWizardContext();
 
   const handleDownload = () => {
     setCurrentStatus(WizardStatus.downloadingOllama);
@@ -166,26 +187,26 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
 
   let serverButton: React.ReactNode;
 
-if (serverStatus === ServerStatus.started) {
-  serverButton = (
-    <VSCodeButton variant='secondary' disabled>
-      Complete!
-    </VSCodeButton>
-  );
-} else if (serverStatus === ServerStatus.stopped) {
-  serverButton = (
-    // TODO let user choose between installing manually or automatically (via homebrew/script/installer)?
-    <VSCodeButton onClick={handleStartOllama}>
-      Start Ollama
-    </VSCodeButton>
-  );
-} else {
-  serverButton = (
-    <VSCodeButton onClick={handleDownload}>
-      Download and Install Ollama
-    </VSCodeButton>
-  );
-}
+  if (serverStatus === ServerStatus.started) {
+    serverButton = (
+      <VSCodeButton variant='secondary' disabled>
+        Complete!
+      </VSCodeButton>
+    );
+  } else if (serverStatus === ServerStatus.stopped) {
+    serverButton = (
+      // TODO let user choose between installing manually or automatically (via homebrew/script/installer)?
+      <VSCodeButton onClick={handleStartOllama}>
+        Start Ollama
+      </VSCodeButton>
+    );
+  } else {
+    serverButton = (
+      <VSCodeButton onClick={handleDownload} disabled={isOffline}>
+        Download and Install Ollama
+      </VSCodeButton>
+    );
+  }
 
   return (
     <WizardStep {...props}>
@@ -197,13 +218,19 @@ if (serverStatus === ServerStatus.started) {
         <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
           If you prefer, you can also <a href='https://ollama.com/download'>install Ollama manually</a>.
         </p>
+        {isOffline && (
+          <DiagnosticMessage
+            type="info"
+            message="Network connection required"
+          />
+        )}
       </div>
     </WizardStep>
   );
 };
 
 const ModelSelectionStep: React.FC<StepProps> = (props) => {
-  const { serverStatus, recommendedModel, selectedModel, setSelectedModel, modelInstallationProgress, setModelInstallationProgress, modelInstallationStatus, setModelInstallationStatus } = useWizardContext();
+  const { serverStatus, recommendedModel, selectedModel, setSelectedModel, modelInstallationProgress, setModelInstallationProgress, modelInstallationStatus, setModelInstallationStatus, isOffline } = useWizardContext();
   const progressInterval = useRef<NodeJS.Timeout>();
 
   const startDownload = () => {
@@ -293,7 +320,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
             {modelInstallationStatus === 'idle' && (
             <VSCodeButton
               onClick={startDownload}
-              disabled={serverStatus !== ServerStatus.started}
+              disabled={isOffline || serverStatus !== ServerStatus.started}
               variant="primary"
             >
              Download
@@ -342,12 +369,16 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
             </div>
           )} */}
           {serverStatus !== ServerStatus.started && (
-            <div className="mt-4 flex items-start space-x-2">
-              <ExclamationTriangleIcon className="h-4 w-4 mt-0.5" style={{ color: 'var(--vscode-errorForeground, #f48771)' }} aria-hidden="true" />
-              <span className="text-sm" style={{ color: 'var(--vscode-errorForeground, #f48771)' }}>
-                Ollama must be started
-              </span>
-            </div>
+            <DiagnosticMessage
+              type="warning"
+              message="Ollama must be started"
+            />
+          )}
+          {isOffline && (
+            <DiagnosticMessage
+              type="info"
+              message="Network connection required"
+            />
           )}
         </div>
       )}
@@ -409,7 +440,7 @@ function init(): void {
 }
 
 const WizardContent: React.FC = () => {
-  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel, modelInstallationProgress ,setModelInstallationProgress, setModelInstallationStatus } = useWizardContext();
+  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel, modelInstallationProgress ,setModelInstallationProgress, setModelInstallationStatus, setIsOffline } = useWizardContext();
   const stepStatusesRef = useRef(stepStatuses);
   const currentStatusRef = useRef(currentStatus);
   // Update ref when stepStatuses changes
@@ -510,6 +541,20 @@ const WizardContent: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const checkOnlineStatus = () => {
+      setIsOffline(!navigator.onLine);
+    };
+
+    window.addEventListener('online', checkOnlineStatus);
+    window.addEventListener('offline', checkOnlineStatus);
+    checkOnlineStatus(); // Initial check
+
+    return () => {
+      window.removeEventListener('online', checkOnlineStatus);
+      window.removeEventListener('offline', checkOnlineStatus);
+    };
+  }, []);
 
   const steps = [
     { component: OllamaInstallStep, title: 'Download and install Ollama' },
@@ -553,7 +598,7 @@ const WizardContent: React.FC = () => {
           {/* Right panel with image */}
           <div className="flex justify-center" style={{ flex: '1 1 auto' }}>
             <img
-              src={`${window.vscMediaUrl}/granite/step_${activeStep + 1}.png`}
+              src={`${window.vscMediaUrl}/granite/step_${activeStep + 1}.svg`}
               alt={`Step ${activeStep + 1} illustration`}
               className="max-w-full h-auto object-contain"
               style={{

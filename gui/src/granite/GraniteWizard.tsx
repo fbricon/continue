@@ -177,27 +177,12 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
     });
   };
 
-  const handleStartOllama = () => {
-    setCurrentStatus(WizardStatus.startingOllama);
-    vscode.postMessage({
-      command: "startOllama",
-    });
-
-  };
-
   let serverButton: React.ReactNode;
 
-  if (serverStatus === ServerStatus.started) {
+  if (serverStatus === ServerStatus.started || serverStatus === ServerStatus.stopped) {
     serverButton = (
       <VSCodeButton variant='secondary' disabled>
         Complete!
-      </VSCodeButton>
-    );
-  } else if (serverStatus === ServerStatus.stopped) {
-    serverButton = (
-      // TODO let user choose between installing manually or automatically (via homebrew/script/installer)?
-      <VSCodeButton onClick={handleStartOllama}>
-        Start Ollama
       </VSCodeButton>
     );
   } else {
@@ -320,7 +305,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
             {modelInstallationStatus === 'idle' && (
             <VSCodeButton
               onClick={startDownload}
-              disabled={isOffline || serverStatus !== ServerStatus.started}
+              disabled={isOffline || (serverStatus !== ServerStatus.started && serverStatus !== ServerStatus.stopped)}
               variant="primary"
             >
              Download
@@ -368,10 +353,16 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
               </span>
             </div>
           )} */}
-          {serverStatus !== ServerStatus.started && (
+          {serverStatus !== ServerStatus.started && serverStatus !== ServerStatus.stopped && (
             <DiagnosticMessage
               type="warning"
-              message="Ollama must be started"
+              message="Ollama must be installed"
+            />
+          )}
+          {serverStatus === ServerStatus.stopped && (
+            <DiagnosticMessage
+              type="info"
+              message="Ollama will be started automatically"
             />
           )}
           {isOffline && (
@@ -478,7 +469,7 @@ const WizardContent: React.FC = () => {
           const data = payload.data;
           setServerStatus(data.serverStatus);
           const newStepStatuses = [...currStepStatuses];
-          if (data.serverStatus !== ServerStatus.started) {
+          if (data.serverStatus !== ServerStatus.started && data.serverStatus !== ServerStatus.stopped) {
             //(re)set all step statuses if ollama is not started
             newStepStatuses.fill('missing');
           } else {

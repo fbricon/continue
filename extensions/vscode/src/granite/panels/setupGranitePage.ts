@@ -280,9 +280,6 @@ export class SetupGranitePage {
               },
             });
             break;
-          case "startOllama":
-            await this.server.startServer();
-            break;
           case "installOllama":
             await this.server.installServer(data.mode);
             break;
@@ -310,7 +307,22 @@ export class SetupGranitePage {
             this.publishStatus(webview);
             break;
           case "installModels":
+            // Check if the server is running, if not, start it and wait for it to be ready until timeout is reached
+            var { serverStatus, timeout } = await this.waitUntilOllamaStarts();
+
+            if (serverStatus !== ServerStatus.started) {
+              const errorMessage = `Ollama server failed to start in ${timeout / 1000} seconds`;
+              console.error(errorMessage);
+              webview.postMessage({
+                command: "modelInstallationProgress",
+                data: {
+                  error: errorMessage,
+                },
+              });
+              break;
+            }
             console.log("Installing models");
+
             async function reportProgress(progress: ProgressData) {
               webview.postMessage({
                 command: "modelInstallationProgress",
@@ -342,6 +354,26 @@ export class SetupGranitePage {
       undefined,
       this._disposables
     );
+  }
+
+  private async waitUntilOllamaStarts() {
+    let serverStatus = await this.server.getStatus();
+    const timeout = 30000;
+    const interval = 500;
+    if (serverStatus !== ServerStatus.started) {
+      console.log("Starting ollama server");
+      await this.server.startServer();
+      // Check if the server is running until timeout is reached
+      for (let i = 0; i < timeout / interval; i++) {
+        serverStatus = await this.server.getStatus();
+        if (serverStatus === ServerStatus.started) {
+          break;
+        }
+        console.log("Waiting for ollama server to start " + i);
+        await new Promise(resolve => setTimeout(resolve, interval));
+      }
+    }
+    return { serverStatus, timeout };
   }
 
   async getConfiguredModels(): Promise<ConfiguredModels> {
@@ -407,74 +439,6 @@ export class SetupGranitePage {
         modelStatuses: modelStatusesObject
       },
     });
-  }
-
-  async setupGranite(
-    graniteConfiguration: GraniteConfiguration, reportProgress: (progress: ProgressData) => void, webview: Webview): Promise<void> {
-    //TODO handle continue (conflicting) onboarding page
-
-    console.log("Starting Granite AI-Assistant configuration...");
-    const chatModel = graniteConfiguration.chatModelId;
-
-    const tabModel = graniteConfiguration.tabModelId;
-    const embeddingsModel = graniteConfiguration.embeddingsModelId;
-    // Collect all unique models to install from graniteConfiguration
-    const modelsToInstall: string[] = []; //I'd prefer using a sorted set but there's no such thing in vanilla typescript
-    if (chatModel !== null && !modelsToInstall.includes(chatModel)) {
-      modelsToInstall.push(chatModel);
-    }
-    if (tabModel !== null && !modelsToInstall.includes(tabModel)) {
-      modelsToInstall.push(tabModel);
-    }
-    if (embeddingsModel !== null && !modelsToInstall.includes(embeddingsModel)) {
-      modelsToInstall.push(embeddingsModel);
-    }
-
-    try {
-      // Attempt to install the required models
-      for (const model of modelsToInstall) {
-        const modelStatus = await this.server.getModelStatus(model);
-        if (modelStatus !== ModelStatus.installed) {
-          if (modelStatus === ModelStatus.stale) {
-            console.log(`${model} is already installed, it will be updated`);
-          } else {
-            console.log(`Installing ${model}`);
-          }
-          await this.server.installModel(model, reportProgress);
-          this.publishStatus(webview);
-          await Telemetry.send("paver.setup.model.install", { model });
-        }
-      }
-
-      console.log("Granite AI-Assistant setup complete");
-      await Telemetry.send("paver.setup.success", {
-        chatModelId: chatModel ?? 'none',
-        tabModelId: tabModel ?? 'none',
-        embeddingsModelId: embeddingsModel ?? 'none',
-      });
-    } catch (error: any) {
-      //if error is CancellationError, then we can ignore it
-      if (error instanceof CancellationError || error?.name === "Canceled") {
-        return;
-      }
-      // Generic error handling for all errors
-      await Telemetry.send("paver.setup.error", {
-        error: error?.message ?? 'unknown error',
-        chatModelId: chatModel ?? 'none',
-        tabModelId: tabModel ?? 'none',
-        embeddingsModelId: embeddingsModel ?? 'none',
-      });
-
-      // Show a generic error message to the user
-      window.showErrorMessage(`An error occurred during model setup: ${error.message ?? 'Unknown error'}`);
-
-      // Rethrow the error after handling
-      throw error;
-    }
-
-    // Display Continue Chat UI next
-    await commands.executeCommand("continue.continueGUIView.focus");
-    await this.showTutorial();
   }
 
   async showTutorial() {

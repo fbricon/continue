@@ -18,17 +18,17 @@ import {
   ViewColumn,
   Webview,
   WebviewPanel,
-  window
+  window,
+  workspace
 } from "vscode";
 
-import { IModelServer } from '../modelServer';
 import { MockServer } from '../ollama/mockServer';
 import { OllamaServer } from "../ollama/ollamaServer";
 import { Telemetry } from '../telemetry';
 import { getNonce } from "../utils/getNonce";
 import { getUri } from "../utils/getUri";
 import { getSystemInfo } from "../utils/sysUtils";
-import { cat } from 'core/vendor/modules/@xenova/transformers';
+import { EXTENSION_NAME } from 'core/control-plane/env';
 
 
 /**
@@ -322,8 +322,12 @@ export class SetupGranitePage {
             this.modelInstallCanceller?.dispose();
             this.modelInstallCanceller = new CancellationTokenSource();
             try {
-              const selectedModel = data.model as string;
-              await this.server.pullModels(selectedModel, this.modelInstallCanceller.token, reportProgress);
+              const selectedModelSize = data.model as string;
+              const result = await this.server.pullModels(selectedModelSize, this.modelInstallCanceller.token, reportProgress);
+              if (result) {
+                await this.saveSettings(selectedModelSize);
+              }
+
             } catch (error: any) {
               console.error("Error during model installation", error);
               webview.postMessage({
@@ -477,4 +481,9 @@ export class SetupGranitePage {
     await commands.executeCommand("granite.showTutorial");
   }
 
+  async saveSettings(modelSize: string): Promise<void> {
+    console.log("Saving settings for model size: " + modelSize);
+    const config = workspace.getConfiguration(EXTENSION_NAME);
+    await config.update('localModelSize', modelSize, true);
+  }
 }

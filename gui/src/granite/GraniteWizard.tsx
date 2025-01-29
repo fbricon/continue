@@ -169,7 +169,7 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
 if (serverStatus === ServerStatus.started) {
   serverButton = (
     <VSCodeButton variant='secondary' disabled>
-      Started!
+      Complete!
     </VSCodeButton>
   );
 } else if (serverStatus === ServerStatus.stopped) {
@@ -182,7 +182,7 @@ if (serverStatus === ServerStatus.started) {
 } else {
   serverButton = (
     <VSCodeButton onClick={handleDownload}>
-      Download Ollama
+      Download and Install Ollama
     </VSCodeButton>
   );
 }
@@ -191,9 +191,12 @@ if (serverStatus === ServerStatus.started) {
     <WizardStep {...props}>
       <div className="mt-4">
         <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
-          Ollama is an open source tool that allows running AI models locally. To begin using Granite.Code, first follow the instructions to download and install Ollama.
+          Ollama is an open source tool that allows running AI models locally. It is required by Granite.Code.
         </p>
         {serverButton}
+        <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+          If you prefer, you can also <a href='https://ollama.com/download'>install Ollama manually</a>.
+        </p>
       </div>
     </WizardStep>
   );
@@ -287,13 +290,13 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
           </RadioGroup>
 
           <div className="mt-4 flex items-center gap-2">
-            {modelInstallationStatus !== 'complete' && (
+            {modelInstallationStatus === 'idle' && (
             <VSCodeButton
               onClick={startDownload}
-              disabled={serverStatus !== ServerStatus.started && modelInstallationStatus !== 'idle'}
+              disabled={serverStatus !== ServerStatus.started}
               variant="primary"
             >
-              {modelInstallationStatus === 'idle' ? 'Download' : 'Downloading...'}
+             Download
             </VSCodeButton>
             )}
             {modelInstallationStatus === 'complete' && (
@@ -486,6 +489,8 @@ const WizardContent: React.FC = () => {
           if (error) {
             console.error("Model installation error: " + error);
             setModelInstallationProgress(0);
+            //TODO: show error message
+            //TODO Cancel download
           }
 
         }
@@ -514,32 +519,65 @@ const WizardContent: React.FC = () => {
 
   return (
     <div className="h-full w-full" role="tablist">
-      <div className="p-8 max-w-2xl mx-auto">
-        <h2 className="text-3xl font-normal mb-2" style={{ color: 'var(--vscode-foreground)' }}>
-          Granite.Code
-        </h2>
-        <h2 className="text-2xl font-light mb-1" style={{ color: 'var(--vscode-foreground)' }}>
-          Local AI setup
-        </h2>
-        <p className="mb-8" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-          Follow these simple steps to start using local AI.
-        </p>
+      {/* Main container with responsive layout */}
+      <div className="px-10 pt-1 max-w-[1400px] mx-10 [&:global]:min-w-[800px]:px-16 [&:global]:min-w-[800px]:pt-6">
+        <div className="flex flex-col [&>*]:w-full" style={{ gap: '2rem' }}>
+          {/* Left panel with text and steps */}
+          <div className="max-w-[600px]" style={{ flex: '1 1 auto' }}>
+            <h2 className="text-3xl font-normal mb-2" style={{ color: 'var(--vscode-foreground)' }}>
+              Granite.Code
+            </h2>
+            <h2 className="text-2xl font-light mb-1" style={{ color: 'var(--vscode-foreground)' }}>
+              Local AI setup
+            </h2>
+            <p className="mb-8" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+              Follow these simple steps to start using local AI.
+            </p>
 
-        <div className="space-y-0.5[1px]">
-          {steps.map((step, index) => {
-            const StepComponent = step.component;
-            return (
-              <StepComponent
-                key={step.title}
-                status={stepStatuses[index]}
-                isActive={activeStep === index}
-                title={step.title}
-                onClick={() => {setActiveStep(index)}}
-              />
-            );
-          })}
+            <div className="space-y-0.5[1px]">
+              {steps.map((step, index) => {
+                const StepComponent = step.component;
+                return (
+                  <StepComponent
+                    key={step.title}
+                    status={stepStatuses[index]}
+                    isActive={activeStep === index}
+                    title={step.title}
+                    onClick={() => setActiveStep(index)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right panel with image */}
+          <div className="flex justify-center" style={{ flex: '1 1 auto' }}>
+            <img
+              src={`${window.vscMediaUrl}/granite/step_${activeStep + 1}.png`}
+              alt={`Step ${activeStep + 1} illustration`}
+              className="max-w-full h-auto object-contain"
+              style={{
+                opacity: 0.9,
+                maxHeight: '400px'
+              }}
+            />
+          </div>
         </div>
       </div>
+
+      {/* Add custom media query for layout change at 800px */}
+      <style>
+        {`
+          @media (min-width: 800px) {
+            .flex-col {
+              flex-direction: row !important;
+            }
+            .flex-col > * {
+              width: 50% !important;
+            }
+          }
+        `}
+      </style>
     </div>
   );
 };

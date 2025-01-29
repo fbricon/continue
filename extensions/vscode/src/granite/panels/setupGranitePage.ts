@@ -152,7 +152,7 @@ export class SetupGranitePage {
           retainContextWhenHidden: true,
           // Restrict the webview to only load resources from the `gui/assets` directory
           localResourceRoots: [
-            Uri.joinPath(extensionUri, "gui/assets"),
+            Uri.joinPath(extensionUri, "gui"),
           ],
         }
       );
@@ -193,13 +193,13 @@ export class SetupGranitePage {
   private _getWebviewContent(webview: Webview, context: ExtensionContext) {
 
     let stylesUri, scriptUri;
+    const extensionUri = context.extensionUri;
+    const vscMediaUrl = getUri(webview, extensionUri, ["gui"]).toString();
 
     if (context.extensionMode === ExtensionMode.Development) {
       scriptUri = "http://localhost:5173/src/granite/indexSetupGranite.tsx";
       stylesUri = "http://localhost:5173/src/granite/indexSetupGranite.css";
     } else {
-      const extensionUri = context.extensionUri;
-
       // The CSS file from the React build output
       stylesUri = getUri(webview, extensionUri, [
         "gui",
@@ -227,27 +227,27 @@ export class SetupGranitePage {
         <head>
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} ${devStyleSrc} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src ${devConnectSrc} 'self'">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src ${webview.cspSource} ${devStyleSrc} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src ${devConnectSrc} 'self'; img-src https: ${webview.cspSource} data:">
           <link rel="stylesheet" type="text/css" href="${stylesUri}">
           <title>Granite Models</title>
-        </head>
-        <body>
-
+          </head>
+          <body>
           <div id="root"></div>
-
           ${
             inDevelopmentMode
-              ? `<script type="module" nonce="${nonce}">
+            ? `<script type="module" nonce="${nonce}">
             import RefreshRuntime from "http://localhost:5173/@react-refresh"
             RefreshRuntime.injectIntoGlobalHook(window)
             window.$RefreshReg$ = () => {}
             window.$RefreshSig$ = () => (type) => type
             window.__vite_plugin_react_preamble_installed__ = true
             </script>`
-              : ""
+            : ""
           }
-
+          <script type="module" nonce="${nonce}">
+            window.graniteMediaUrl="${vscMediaUrl}";
+            window.vscMediaUrl="${vscMediaUrl}";
+          </script>
           <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
         </body>
       </html>

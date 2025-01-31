@@ -16,16 +16,6 @@ export const DEFAULT_MODEL_INFO = new Map<string, ModelInfo>();
   size: 4.9*GB,
   digest: ''
 },
-{
-  id: 'granite-code:3b',
-  size: 2*GB,
-  digest: ''
-},
-{
-  id: 'granite-code:8b',
-  size: 4*GB,
-  digest: ''
-}
 ].forEach((m: ModelInfo) => {
   DEFAULT_MODEL_INFO.set(m.id, m);
 });

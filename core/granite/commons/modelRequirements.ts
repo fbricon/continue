@@ -22,18 +22,6 @@ export const MODEL_REQUIREMENTS: Record<string, ModelRequirements> = {
     gpuRecommended: true,
     sizeBytes: Math.ceil(4.9 * GB)
   },
-  "granite-code:3b": {
-    minMemoryBytes: 6 * GB,
-    recommendedMemoryBytes: 8 * GB,
-    gpuRecommended: false,
-    sizeBytes: Math.ceil(2.0 * GB)
-  },
-  "granite-code:8b": {
-    minMemoryBytes: 12 * GB,
-    recommendedMemoryBytes: 16 * GB,
-    gpuRecommended: true,
-    sizeBytes: Math.ceil(4.6 * GB)
-  },
   "nomic-embed-text:latest": {
     minMemoryBytes: 2 * GB,
     recommendedMemoryBytes: 4 * GB,

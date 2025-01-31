@@ -1,9 +1,9 @@
-import { VscArrowCircleDown, VscCircleLarge, VscCircleLargeFilled, VscPass, VscPassFilled } from "react-icons/vsc";
+import { VscArrowCircleDown, VscCircleLarge, VscCircleLargeFilled, VscPassFilled } from "react-icons/vsc";
 
 /**
  * StatusValue represents the different states that a status check can be in.
  */
-export type StatusValue = 'complete' | 'installing' | 'partial' | 'missing';
+export type StatusValue = 'complete' | 'installing' | 'active' | 'missing';
 
 /**
  * StatusCheckProps represents the props that are passed to the StatusCheck component.
@@ -27,7 +27,7 @@ export const StatusCheck: React.FC<StatusCheckProps> = ({ type, title }: StatusC
       return <VscPassFilled color={DEFAULT_COLOR} title={title} style={ICON_STYLE} />;
     case "installing":
       return <VscArrowCircleDown color={DEFAULT_COLOR} title={title} style={ICON_STYLE} />;
-    case "partial":
+    case "active":
       return <VscCircleLarge color={DEFAULT_COLOR} title={title} style={ICON_STYLE} />;
     default: //"missing"
       return <VscCircleLarge title={title} style={ICON_STYLE} />;

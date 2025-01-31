@@ -1,14 +1,13 @@
 import * as fs from 'fs';
-import { env } from 'process';
 
 import { ConfigHandler } from 'core/config/ConfigHandler';
+import { EXTENSION_NAME } from 'core/control-plane/env';
 import { ConfiguredModels } from 'core/granite/commons/configuredModels';
-import { isDevMode } from 'core/granite/commons/constants';
 import { DOWNLOADABLE_MODELS } from 'core/granite/commons/modelRequirements';
 import { ProgressData } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from 'core/granite/commons/statuses';
+import { FINAL_STEP, MODELS_STEP, ModelType, OLLAMA_STEP, WizardState } from 'core/granite/commons/wizardState';
 import {
-  CancellationError,
   CancellationTokenSource,
   commands,
   Disposable,
@@ -22,13 +21,10 @@ import {
   workspace
 } from "vscode";
 
-import { MockServer } from '../ollama/mockServer';
 import { OllamaServer } from "../ollama/ollamaServer";
-import { Telemetry } from '../telemetry';
 import { getNonce } from "../utils/getNonce";
 import { getUri } from "../utils/getUri";
 import { getSystemInfo } from "../utils/sysUtils";
-import { EXTENSION_NAME } from 'core/control-plane/env';
 
 
 /**
@@ -42,34 +38,46 @@ import { EXTENSION_NAME } from 'core/control-plane/env';
  * - Setting message listeners so data can be passed between the webview and extension
  */
 
-type GraniteConfiguration = {
-  tabModelId: string | null;
-  chatModelId: string | null;
-  embeddingsModelId: string | null;
-};
-
-const useMockServer = env['MOCK_OLLAMA'] === 'true';
-
 export class SetupGranitePage {
   public static currentPanel: SetupGranitePage | undefined;
   private readonly _panel: WebviewPanel;
   private _disposables: Disposable[] = [];
-  private _fileWatcher: fs.FSWatcher | undefined;
   private server: OllamaServer;
+  private wizardState: WizardState;
+
   /**
    * The HelloWorldPanel class private constructor (called only from the render method).
    *
    * @param panel A reference to the webview panel
    * @param extensionUri The URI of the directory containing the extension
    */
-  private constructor(panel: WebviewPanel, context: ExtensionContext, private configHandler: ConfigHandler) {
+  private constructor(panel: WebviewPanel, context: ExtensionContext, private configHandler: ConfigHandler, defaultState?: WizardState) {
     this._panel = panel;
-    this.server = useMockServer ?
-      new MockServer(300) :
-      new OllamaServer(context);
-    // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
-    // the panel or when the panel is closed programmatically)
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this.server = new OllamaServer(context);
+    this.wizardState = defaultState ? defaultState : { stepStatuses: [false, false, false] } as WizardState;
+
+    // Set up dispose handler with confirmation dialog
+    this._panel.onDidDispose(async () => {
+      // Verify setup is complete by checking if ollama and the models are configured
+      const isComplete = this.wizardState.stepStatuses[OLLAMA_STEP] && this.wizardState.stepStatuses[MODELS_STEP];
+      let reopen = false;
+      if (!isComplete) {
+        const RESUME_LABEL = "Resume Setup";
+        const choice = await window.showWarningMessage(
+          'Resume Granite.Code Setup?',
+          {
+            modal: true,
+            detail: 'Granite.Code needs to be setup before it can be used. Setup is not yet complete.'
+           },
+          RESUME_LABEL// Cancel is always shown
+        );
+        reopen = choice === RESUME_LABEL;
+      }
+      this.dispose();
+      if (reopen) {
+        SetupGranitePage.render(context, configHandler, this.wizardState);
+      }
+    }, null, this._disposables);
 
     // Set the HTML content for the webview panel
     this._panel.webview.html = this._getWebviewContent(
@@ -78,51 +86,13 @@ export class SetupGranitePage {
     );
 
     // Set an event listener to listen for messages passed from the webview context
-    this._setWebviewMessageListener(this._panel.webview);
+    this._setWebviewMessageListener(this._panel);
 
     // Send a new status on configuration changes
     const cleanupConfigUpdate = configHandler.onConfigUpdate(({config}) => {
       this.publishStatus(this._panel.webview);
     });
     this._disposables.push(new Disposable(cleanupConfigUpdate));
-
-    if (isDevMode) {
-      this._setupFileWatcher(context);
-    }
-  }
-
-  private _setupFileWatcher(context: ExtensionContext) {
-    const webviewsBuildPath = Uri.joinPath(context.extensionUri, "gui", "assets");
-    const webviewsBuildFsPath = webviewsBuildPath.fsPath;
-    console.log("Watching " + webviewsBuildFsPath);
-
-    let debounceTimer: NodeJS.Timeout | null = null;
-    const debounceDelay = 100; //100 ms
-
-    this._fileWatcher = fs.watch(webviewsBuildFsPath, (_event, filename) => {
-      if (filename) {
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-        }
-
-        debounceTimer = setTimeout(() => {
-          console.log("File changed: " + filename + ", reloading webview");
-          this.debounceStatus = 0;
-          this._panel.webview.html = this._getWebviewContent(this._panel.webview, context);
-          debounceTimer = null;
-        }, debounceDelay);
-      }
-    });
-
-    // Add the file watcher to disposables
-    this._disposables.push(new Disposable(() => {
-      if (this._fileWatcher) {
-        this._fileWatcher.close();
-      }
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-    }));
   }
 
   /**
@@ -131,7 +101,7 @@ export class SetupGranitePage {
    *
    * @param extensionUri The URI of the directory containing the extension.
    */
-  public static render(context: ExtensionContext, configHandler: ConfigHandler) {
+  public static render(context: ExtensionContext, configHandler: ConfigHandler, wizardState?: WizardState) {
     if (SetupGranitePage.currentPanel) {
       // If the webview panel already exists reveal it
       SetupGranitePage.currentPanel._panel.reveal(ViewColumn.One);
@@ -150,14 +120,14 @@ export class SetupGranitePage {
           // Enable JavaScript in the webview
           enableScripts: true,
           retainContextWhenHidden: true,
-          // Restrict the webview to only load resources from the `gui/assets` directory
+          // Restrict the webview to only load resources from the `gui` directory
           localResourceRoots: [
             Uri.joinPath(extensionUri, "gui"),
           ],
         }
       );
 
-      SetupGranitePage.currentPanel = new SetupGranitePage(panel, context, configHandler);
+      SetupGranitePage.currentPanel = new SetupGranitePage(panel, context, configHandler, wizardState);
     }
   }
 
@@ -245,7 +215,6 @@ export class SetupGranitePage {
             : ""
           }
           <script type="module" nonce="${nonce}">
-            window.graniteMediaUrl="${vscMediaUrl}";
             window.vscMediaUrl="${vscMediaUrl}";
           </script>
           <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
@@ -263,8 +232,8 @@ export class SetupGranitePage {
    */
   private debounceStatus = 0;
   private modelInstallCanceller: CancellationTokenSource | undefined;
-  private _setWebviewMessageListener(webview: Webview) {
-
+  private _setWebviewMessageListener(panel: WebviewPanel) {
+    const webview = panel.webview;
     webview.onDidReceiveMessage(
       async (message: any) => {
         const command = message.command;
@@ -276,7 +245,8 @@ export class SetupGranitePage {
               command: "init",
               data: {
                 installModes: await this.server.supportedInstallModes(),
-                systemInfo: await getSystemInfo()
+                systemInfo: await getSystemInfo(),
+                wizardState: this.wizardState
               },
             });
             break;
@@ -284,6 +254,8 @@ export class SetupGranitePage {
             await this.server.installServer(data.mode);
             break;
           case "showTutorial":
+            this.wizardState.stepStatuses[FINAL_STEP] = true;
+            this.publishStatus(webview);
             await this.showTutorial();
             break;
           case "cancelModelInstallation":
@@ -305,6 +277,10 @@ export class SetupGranitePage {
             this.debounceStatus = now;
 
             this.publishStatus(webview);
+            break;
+          case "selectModels":
+            const selectedModelSize = data.model as ModelType;
+            this.wizardState.selectedModelSize = selectedModelSize;
             break;
           case "installModels":
             // Check if the server is running, if not, start it and wait for it to be ready until timeout is reached
@@ -334,12 +310,20 @@ export class SetupGranitePage {
             this.modelInstallCanceller?.dispose();
             this.modelInstallCanceller = new CancellationTokenSource();
             try {
-              const selectedModelSize = data.model as string;
+              const selectedModelSize = data.model as ModelType;
+              this.wizardState.selectedModelSize = selectedModelSize;
               const result = await this.server.pullModels(selectedModelSize, this.modelInstallCanceller.token, reportProgress);
+              this.wizardState.stepStatuses[MODELS_STEP] = result;
+              this.publishStatus(webview);
               if (result) {
                 await this.saveSettings(selectedModelSize);
+                if (!panel.visible) {
+                  const selection = await window.showInformationMessage("Granite.Code is ready to be used.", "Show Setup Wizard");
+                  if (selection) {
+                    panel.reveal();
+                  }
+                }
               }
-
             } catch (error: any) {
               console.error("Error during model installation", error);
               webview.postMessage({
@@ -423,20 +407,17 @@ export class SetupGranitePage {
   async publishStatus(webview: Webview) {
     // console.log("Received fetchStatus msg " + debounceStatus);
     const serverStatus = await this.server.getStatus();
-    if (serverStatus === ServerStatus.stopped) {
-      // TODO Try starting the server automatically or let the user start it manually?
-      // await this.server.startServer();
-      // serverStatus = await this.server.getStatus();
-    }
     const modelStatuses = await this.getModelStatuses();
     const modelStatusesObject = Object.fromEntries(modelStatuses); // Convert Map to Object
     const configuredModels = await this.getConfiguredModels();
+    this.wizardState.stepStatuses[OLLAMA_STEP] = serverStatus === ServerStatus.started || serverStatus === ServerStatus.stopped;
     webview.postMessage({
       command: "status",
       data: {
         serverStatus,
         configuredModels: configuredModels,
-        modelStatuses: modelStatusesObject
+        modelStatuses: modelStatusesObject,
+        wizardState: this.wizardState,
       },
     });
   }

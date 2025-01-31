@@ -6,6 +6,7 @@ import { ServerStatus } from 'core/granite/commons/statuses';
 import { VSCodeButton } from '../components/VSCodeButton';
 import './GraniteWizard.css';
 import { isHighEndMachine, SystemInfo } from 'core/granite/commons/sysInfo';
+import { OLLAMA_STEP, MODELS_STEP, FINAL_STEP, WizardState, ModelType} from 'core/granite/commons/wizardState';
 import { vscode } from './utils/vscode';
 import { ProgressData } from 'core/granite/commons/progressData';
 
@@ -15,10 +16,6 @@ interface InstallationMode {
   supportsRefresh: boolean;
 }
 
-const OLLAMA_STEP = 0;
-const MODELS_STEP = 1;
-const FINAL_STEP = 2
-
 enum WizardStatus {
   idle,
   downloadingOllama,
@@ -26,16 +23,13 @@ enum WizardStatus {
   downloadingModel
 }
 
-type ModelType = "large" | "small";
-
-
 interface WizardContextProps {
   currentStatus: WizardStatus;
   setCurrentStatus: React.Dispatch<React.SetStateAction<WizardStatus>>;
   activeStep: number;
   setActiveStep: React.Dispatch<React.SetStateAction<number>>;
-  stepStatuses: StatusValue[];
-  setStepStatuses: React.Dispatch<React.SetStateAction<StatusValue[]>>;
+  stepStatuses: boolean[];
+  setStepStatuses: React.Dispatch<React.SetStateAction<boolean[]>>;
   serverStatus: ServerStatus;
   setServerStatus: React.Dispatch<React.SetStateAction<ServerStatus>>;
   systemInfo: SystemInfo | null;
@@ -73,7 +67,7 @@ interface WizardProviderProps {
 export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [activeStep, setActiveStep] = useState(0);
   const [currentStatus, setCurrentStatus] = useState<WizardStatus>(WizardStatus.idle);
-  const [stepStatuses, setStepStatuses] = useState<StatusValue[]>(['missing', 'missing', 'missing']);
+  const [stepStatuses, setStepStatuses] = useState<boolean[]>([false, false, false]);
   const [serverStatus, setServerStatus] = useState<ServerStatus>(ServerStatus.unknown);
   const [modelStatus, setModelStatus] = useState<StatusValue>('missing');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -114,7 +108,7 @@ interface ModelOption {
 interface StepProps {
   isActive: boolean;
   onClick?: () => void;
-  status: StatusValue;
+  status: boolean;
   title: string;
   children?: React.ReactNode;
 }
@@ -137,7 +131,7 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
     >
       <div>
         <div className="flex items-center cursor-pointer">
-          <StatusCheck type={isActive && status === 'missing'? 'partial': status} />
+          <StatusCheck type={status ? 'complete' : (isActive ? 'active' : 'missing')} />
           <h3 className="ml-3 wizard-step-title inline">
             {title}
           </h3>
@@ -236,6 +230,16 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
     setModelInstallationProgress(0);
   };
 
+  const handleModelChange = (value: ModelType) => {
+    setSelectedModel(value);
+    vscode.postMessage({
+      command: "selectModels",
+      data: {
+        model: value,
+      },
+    });
+  };
+
   useEffect(() => { //Clear progress interval on unmount
     return () => {
       if (progressInterval.current) {
@@ -264,7 +268,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
           <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
             Select which model you want to use. You can change this preference in the settings.
           </p>
-          <RadioGroup value={selectedModel} onChange={setSelectedModel} className="mt-4" disabled={modelInstallationStatus !== 'idle'}>
+          <RadioGroup value={selectedModel} onChange={handleModelChange} className="mt-4" disabled={modelInstallationStatus !== 'idle'}>
             <div className="space-y-4">
               {modelOptions.map((option) => (
                 <RadioGroup.Option
@@ -378,14 +382,8 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
 };
 
 const StartLocalAIStep: React.FC<StepProps> = (props) => {
-  const { setStepStatuses } = useWizardContext();
   const handleShowTutorial = async () => {
     console.log("show tutorial");
-    setStepStatuses(prevStatuses => {
-      const newStatuses = [...prevStatuses];
-      newStatuses[FINAL_STEP] = 'complete';
-      return newStatuses;
-    });
     vscode.postMessage({
       command: "showTutorial",
     });
@@ -418,7 +416,6 @@ export const GraniteWizard: React.FC = () => {
 };
 
 function requestStatus(): void {
-  console.log("requestStatus");
   vscode.postMessage({
     command: "fetchStatus",
   });
@@ -462,31 +459,40 @@ const WizardContent: React.FC = () => {
           setSystemInfo(sysinfo);
           const recommendedModel = isHighEndMachine(sysinfo) ? "large" : "small";
           setRecommendedModel(recommendedModel);
-          setSelectedModel(recommendedModel);
+          const wizardState = data.wizardState as WizardState | undefined;
+          if (wizardState) {
+            if (wizardState?.selectedModelSize) {
+              setSelectedModel(wizardState.selectedModelSize);
+            } else {
+              console.log("Selecting recommended model as there's nothing prior " + recommendedModel);
+              setSelectedModel(recommendedModel);
+            }
+            if (wizardState?.stepStatuses) {
+              setStepStatuses(wizardState.stepStatuses);
+            }
+          } else {
+            console.log("Selecting recommended model " + recommendedModel);
+            setSelectedModel(recommendedModel);
+          }
+
           break;
         }
         case "status": {
           const data = payload.data;
           setServerStatus(data.serverStatus);
-          const newStepStatuses = [...currStepStatuses];
-          if (data.serverStatus !== ServerStatus.started && data.serverStatus !== ServerStatus.stopped) {
-            //(re)set all step statuses if ollama is not started
-            newStepStatuses.fill('missing');
-          } else {
-            //Ollama finished starting
-            if (newStepStatuses[OLLAMA_STEP] !== 'complete') {
-              //Set Ollama step as complete
-              newStepStatuses[OLLAMA_STEP] = 'complete';
-              //Activate Models step if it's not complete
-              if (newStepStatuses[MODELS_STEP] !== 'complete') {
-                setActiveStep(MODELS_STEP);
-              }
+          const newStepStatuses = data.wizardState.stepStatuses as boolean[];
+          setStepStatuses(prevStatuses => {
+            if (newStepStatuses[OLLAMA_STEP] && !newStepStatuses[MODELS_STEP] && prevStatuses[OLLAMA_STEP] != newStepStatuses[OLLAMA_STEP]) {
+              setActiveStep(MODELS_STEP);
             }
-            if (currStatus === WizardStatus.downloadingOllama || currStatus === WizardStatus.startingOllama) {
-              setCurrentStatus(WizardStatus.idle);
+            if (newStepStatuses[MODELS_STEP] && !newStepStatuses[FINAL_STEP] && prevStatuses[MODELS_STEP] != newStepStatuses[MODELS_STEP]) {
+              setActiveStep(FINAL_STEP);
             }
+            return newStepStatuses;
+          });
+          if (newStepStatuses[OLLAMA_STEP] && currStatus === WizardStatus.downloadingOllama || currStatus === WizardStatus.startingOllama) {
+            setCurrentStatus(WizardStatus.idle);
           }
-          setStepStatuses(newStepStatuses);
           break;
         }
         case "modelInstallationProgress": {
@@ -496,11 +502,6 @@ const WizardContent: React.FC = () => {
             setModelInstallationProgress(progressPercentage);
             console.log("Model installation progress: " + progressPercentage);
             if (Number(progressPercentage.toFixed(4)) >= 100) {//FIXME: don't rely on percentage
-              setStepStatuses(prevStatuses => {
-                const newStatuses = [...prevStatuses];
-                newStatuses[MODELS_STEP] = 'complete';
-                return newStatuses;
-              });
               setTimeout(() => {//Wait a bit before setting status to complete
                 setModelInstallationStatus('complete');
                 setTimeout(() => setActiveStep(FINAL_STEP), 250);

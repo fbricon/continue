@@ -5,25 +5,21 @@ interface VSCodeButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary';
 }
 
-export const VSCodeButton: React.FC<VSCodeButtonProps> = ({ 
+export const VSCodeButton: React.FC<VSCodeButtonProps> = ({
   variant = 'primary',
-  className = '', 
+  className = '',
   style,
   disabled,
-  ...props 
+  ...props
 }) => {
-  const baseClassName = 'px-4 text-sm focus:outline focus:outline-1 focus:outline-[var(--vscode-focusBorder)] vscode-button';
-  const mergedClassName = `${baseClassName} ${className}`.trim();
+  const baseClassName = `px-2 py-1 text-sm focus:outline focus:outline-1 focus:outline-[var(--vscode-focusBorder)] vscode-button rounded-sm ${
+    variant === 'primary'
+      ? 'bg-[var(--vscode-button-background)] text-[var(--vscode-button-foreground)]'
+      : 'bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]'
+  } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`;
+  const mergedClassName = `${baseClassName} ${className} ${className.includes('border ')?'':'border-none'}`.trim();
 
   const baseStyle = {
-    backgroundColor: variant === 'primary' 
-      ? 'var(--vscode-button-background)'
-      : 'var(--vscode-button-secondaryBackground)',
-    color: variant === 'primary'
-      ? 'var(--vscode-button-foreground)'
-      : 'var(--vscode-button-secondaryForeground)',
-    border: 'none',
-    cursor: disabled ? 'not-allowed' : 'pointer',
     ...style
   };
 

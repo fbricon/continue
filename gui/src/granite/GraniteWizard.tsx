@@ -249,6 +249,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
   const [systemError, setSystemError] = useState<string | undefined>();
 
   const startDownload = () => {
+    setModelInstallationError(undefined);
     setModelInstallationStatus('downloading');
     vscode.postMessage({
       command: "installModels",
@@ -538,8 +539,12 @@ const WizardContent: React.FC = () => {
             if (newStepStatuses[OLLAMA_STEP] && !newStepStatuses[MODELS_STEP] && prevStatuses[OLLAMA_STEP] != newStepStatuses[OLLAMA_STEP]) {
               setActiveStep(MODELS_STEP);
             }
-            if (newStepStatuses[MODELS_STEP] && !newStepStatuses[FINAL_STEP] && prevStatuses[MODELS_STEP] != newStepStatuses[MODELS_STEP]) {
-              setActiveStep(FINAL_STEP);
+            if (newStepStatuses[MODELS_STEP]) {
+              setModelInstallationProgress(100);
+              setModelInstallationStatus("complete");
+              if (!newStepStatuses[FINAL_STEP] && prevStatuses[MODELS_STEP] != newStepStatuses[MODELS_STEP]) {
+                setActiveStep(FINAL_STEP);
+              }
             }
             return newStepStatuses;
           });
@@ -550,16 +555,10 @@ const WizardContent: React.FC = () => {
         }
         case "modelInstallationProgress": {
           const progress = payload.data?.progress as ProgressData | undefined;
-          if (progress) {
-            const progressPercentage = (progress.completed! / progress.total!) * 100;
-            setModelInstallationProgress(progressPercentage);
+          if (progress && progress.total) {
+            const progressPercentage = ((progress.completed ?? 0) / progress.total) * 100;
             console.log("Model installation progress: " + progressPercentage);
-            if (Number(progressPercentage.toFixed(4)) >= 100) {//FIXME: don't rely on percentage
-              setTimeout(() => {//Wait a bit before setting status to complete
-                setModelInstallationStatus('complete');
-                setTimeout(() => setActiveStep(FINAL_STEP), 250);
-              }, 250);
-            }
+            setModelInstallationProgress(Math.min(progressPercentage, 99.99));// Don't show 100% completion until it's actually done
           }
           const error = payload.data?.error as string | undefined;
           if (error) {

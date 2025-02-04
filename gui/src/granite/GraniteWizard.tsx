@@ -9,6 +9,9 @@ import { isHighEndMachine, SystemInfo } from 'core/granite/commons/sysInfo';
 import { OLLAMA_STEP, MODELS_STEP, FINAL_STEP, WizardState, ModelType} from 'core/granite/commons/wizardState';
 import { vscode } from './utils/vscode';
 import { ProgressData } from 'core/granite/commons/progressData';
+import { formatSize } from 'core/granite/commons/textUtils';
+import { DEFAULT_MODEL_INFO } from 'core/granite/commons/modelInfo';
+import { DEFAULT_MODEL_GRANITE_LARGE, DEFAULT_MODEL_GRANITE_SMALL } from 'core/config/default';
 
 interface InstallationMode {
   id: string;
@@ -48,6 +51,8 @@ interface WizardContextProps {
   setModelInstallationStatus: React.Dispatch<React.SetStateAction<"idle" | "downloading" | "complete">>;
   isOffline: boolean;
   setIsOffline: React.Dispatch<React.SetStateAction<boolean>>;
+  modelInstallationError: string | undefined;
+  setModelInstallationError: React.Dispatch<React.SetStateAction<string | undefined>>;
 }
 
 const WizardContext = createContext<WizardContextProps | undefined>(undefined);
@@ -77,6 +82,7 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [modelInstallationProgress, setModelInstallationProgress] = useState<number>(0);
   const [modelInstallationStatus, setModelInstallationStatus] = useState<"idle" | "downloading" | "complete">("idle");
   const [isOffline, setIsOffline] = useState(false);
+  const [modelInstallationError, setModelInstallationError] = useState<string | undefined>();
 
   return (
     <WizardContext.Provider value={{
@@ -93,6 +99,8 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
       modelInstallationStatus, setModelInstallationStatus,
       isOffline,
       setIsOffline,
+      modelInstallationError,
+      setModelInstallationError
     }}>
       {children}
     </WizardContext.Provider>
@@ -152,7 +160,7 @@ const DiagnosticMessage: React.FC<{
     <div className="mt-4 flex items-start space-x-2">
       <Icon className="h-4 w-4 mt-0.5" style={{ color }} aria-hidden="true" />
       <span className="text-sm">
-        {message}
+       {message}
       </span>
     </div>
   );
@@ -171,7 +179,9 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
     });
   };
 
-  let serverButton: React.ReactNode;
+  const isDevspaces = installationModes.length > 0 && installationModes[0].id === "devspaces";
+
+  let serverButton
 
   if (serverStatus === ServerStatus.started || serverStatus === ServerStatus.stopped) {
     serverButton = (
@@ -179,7 +189,25 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
         Complete!
       </VSCodeButton>
     );
-  } else {
+  } else if (isDevspaces) {
+    const hiddenLinkRef = useRef<HTMLAnchorElement>(null);
+    const hiddenLink = // Trick to open the link directly, avoiding calling VS Code API, which would show a security warning
+      <a
+        ref={hiddenLinkRef}
+        href="https://developers.redhat.com/articles/2024/08/12/integrate-private-ai-coding-assistant-ollama"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hidden"
+      >
+        Red Hat Dev Spaces Installation Guide
+      </a>;
+    serverButton = <>
+      {hiddenLink}
+      <VSCodeButton onClick={() => hiddenLinkRef.current?.click()}>
+        Installation Guide
+      </VSCodeButton>
+    </>
+  } else if (installationModes.length > 0) {
     serverButton = (
       <VSCodeButton onClick={handleDownload} disabled={isOffline}>
         Download and Install Ollama
@@ -193,11 +221,18 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
         <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
           Ollama is an open source tool that allows running AI models locally. It is required by Granite.Code.
         </p>
+        {isDevspaces && (
+          <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+            Follow the guide to install Ollama on Red Hat Dev Spaces.
+          </p>
+        )}
         {serverButton}
-        <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
-          If you prefer, you can also <a href='https://ollama.com/download'>install Ollama manually</a>.
-        </p>
-        {isOffline && (
+        {!isDevspaces && installationModes.length > 0 && (
+          <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+            If you prefer, you can also <a href='https://ollama.com/download'>install Ollama manually</a>.
+          </p>
+        )}
+        {!isDevspaces && isOffline && (
           <DiagnosticMessage
             type="info"
             message="Network connection required"
@@ -209,8 +244,9 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
 };
 
 const ModelSelectionStep: React.FC<StepProps> = (props) => {
-  const { serverStatus, recommendedModel, selectedModel, setSelectedModel, modelInstallationProgress, setModelInstallationProgress, modelInstallationStatus, setModelInstallationStatus, isOffline } = useWizardContext();
+  const { serverStatus, recommendedModel, selectedModel, setSelectedModel, modelInstallationProgress, setModelInstallationProgress, modelInstallationStatus, setModelInstallationStatus, isOffline, modelInstallationError, setModelInstallationError, systemInfo } = useWizardContext();
   const progressInterval = useRef<NodeJS.Timeout>();
+  const [systemError, setSystemError] = useState<string | undefined>();
 
   const startDownload = () => {
     setModelInstallationStatus('downloading');
@@ -239,6 +275,24 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
       },
     });
   };
+
+  useEffect(() => {//cancel download on error
+    if (modelInstallationError || isOffline) {
+      cancelDownload();
+    }
+  }, [modelInstallationError, isOffline]);
+
+  useEffect(() => {
+    if (systemInfo && systemInfo.diskSpace) {
+      const { freeDiskSpace } = systemInfo.diskSpace;
+      const requiredDiskSpace = getRequiredSpace(selectedModel);
+      if (freeDiskSpace < requiredDiskSpace) {
+        setSystemError(`Insufficient disk space available: ${ formatSize(freeDiskSpace)} free, ${formatSize(requiredDiskSpace)} required.`);
+      } else {
+        setSystemError(undefined);
+      }
+    }
+  }, [systemInfo, selectedModel]);
 
   useEffect(() => { //Clear progress interval on unmount
     return () => {
@@ -309,7 +363,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
             {modelInstallationStatus === 'idle' && (
             <VSCodeButton
               onClick={startDownload}
-              disabled={isOffline || (serverStatus !== ServerStatus.started && serverStatus !== ServerStatus.stopped)}
+              disabled={isOffline || systemError !== undefined || (serverStatus !== ServerStatus.started && serverStatus !== ServerStatus.stopped)}
               variant="primary"
             >
              Download
@@ -349,14 +403,12 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
             )}
           </div>
 
-          {/* {selectedModel === 'large' && (
-            <div className="mt-4 flex items-start space-x-2">
-              <ExclamationTriangleIcon className="h-4 w-4 mt-0.5" style={{ color: 'var(--vscode-errorForeground, #f48771)' }} aria-hidden="true" />
-              <span className="text-sm" style={{ color: 'var(--vscode-errorForeground, #f48771)' }}>
-                Insufficient disk space available
-              </span>
-            </div>
-          )} */}
+          {systemError && (
+            <DiagnosticMessage message={systemError} type='error' />
+          )}
+          {modelInstallationError && (
+            <DiagnosticMessage message={modelInstallationError} type='error' />
+          )}
           {serverStatus !== ServerStatus.started && serverStatus !== ServerStatus.stopped && (
             <DiagnosticMessage
               type="warning"
@@ -428,11 +480,12 @@ function init(): void {
 }
 
 const WizardContent: React.FC = () => {
-  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel, modelInstallationProgress ,setModelInstallationProgress, setModelInstallationStatus, setIsOffline } = useWizardContext();
+  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel, modelInstallationProgress ,setModelInstallationProgress, setModelInstallationStatus, setIsOffline, setModelInstallationError } = useWizardContext();
   const stepStatusesRef = useRef(stepStatuses);
   const currentStatusRef = useRef(currentStatus);
   // Update ref when stepStatuses changes
   useEffect(() => {
+    //TODO do we still need this?
     stepStatusesRef.current = stepStatuses;
   }, [stepStatuses]);
   // Update ref when currentStatus changes
@@ -512,7 +565,7 @@ const WizardContent: React.FC = () => {
           if (error) {
             console.error("Model installation error: " + error);
             setModelInstallationProgress(0);
-            //TODO: show error message
+            setModelInstallationError("Unable to install the Granite Model: " + error);
             //TODO Cancel download
           }
 
@@ -618,3 +671,13 @@ const WizardContent: React.FC = () => {
     </div>
   );
 };
+
+function getRequiredSpace(selectedModel: string): number {
+  //FIXME check if model is already downloaded
+  const graniteModel = (selectedModel === 'large') ? DEFAULT_MODEL_GRANITE_LARGE : DEFAULT_MODEL_GRANITE_SMALL;
+  const models: string[] = [graniteModel.model, 'nomic-embed-text:latest'];
+  return models.reduce((sum, model) => {
+    const modelInfo = DEFAULT_MODEL_INFO.get(model);//FIXME get from registry
+    return sum + (modelInfo ? modelInfo.size : 0);
+  }, 0);
+}

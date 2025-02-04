@@ -1,17 +1,21 @@
 import os from "os";
 import path from 'path';
-import { CancellationError, CancellationToken, env, ExtensionContext, Progress, ProgressLocation, Uri, window } from "vscode";
+
+import { DEFAULT_MODEL_GRANITE_LARGE, DEFAULT_MODEL_GRANITE_SMALL } from "core/config/default";
 import { EXTENSION_ID } from "core/granite/commons/constants";
 import { DEFAULT_MODEL_INFO, ModelInfo } from "core/granite/commons/modelInfo";
 import { getStandardName } from "core/granite/commons/naming";
 import { ProgressData, ProgressReporter } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from "core/granite/commons/statuses";
+import { CancellationToken, env, ExtensionContext, ProgressLocation, Uri, window } from "vscode";
+
 import { IModelServer } from "../modelServer";
 import { terminalCommandRunner } from "../terminal/terminalCommandRunner";
 import { executeCommand } from "../utils/cpUtils";
 import { downloadFileFromUrl } from "../utils/downloadUtils";
+
 import { getRemoteModelInfo } from "./ollamaLibrary";
-import { DEFAULT_MODEL_GRANITE_LARGE, DEFAULT_MODEL_GRANITE_SMALL } from "core/config/default";
+import { isOllamaInstalled, startLocalOllama } from "core/util/ollamaHelper";
 
 const PLATFORM = os.platform();
 
@@ -67,15 +71,7 @@ export class OllamaServer implements IModelServer {
   }
 
   async isServerInstalled(): Promise<boolean> {
-    //check if ollama is installed
-    try {
-      await executeCommand("ollama", ["-v"]);
-      //console.log("Ollama is installed");
-      return true;
-    } catch (error: any) {
-      console.log("Ollama is NOT installed: " + error?.message);
-      return false;
-    }
+    return isOllamaInstalled();
   }
 
   async isServerStarted(): Promise<boolean> {
@@ -92,6 +88,8 @@ export class OllamaServer implements IModelServer {
   }
 
   async startServer(): Promise<boolean> {
+    //FIXME startLocalOllama(IDE) exists in core/util/ollamaHelper.ts, but we don't have the IDE instance here;
+
     let startCommand: string | undefined;
     if (isWin()) {
       startCommand = [
@@ -263,13 +261,6 @@ export class OllamaServer implements IModelServer {
     return models;
   }
 
-  async installModel(modelName: string, reportProgress: (progress: ProgressData) => void): Promise<any> {
-    await this.pullModel(modelName, reportProgress);
-    console.log(`${modelName} was pulled`);
-  }
-
-
-
   async pullModels(type: string, token: CancellationToken, reportProgress: (progress: ProgressData) => void): Promise<boolean> {
     const graniteModel = (type === 'large') ? DEFAULT_MODEL_GRANITE_LARGE : DEFAULT_MODEL_GRANITE_SMALL;
     const models: string[] = [graniteModel.model, 'nomic-embed-text:latest'];
@@ -337,107 +328,6 @@ export class OllamaServer implements IModelServer {
           progressReporter.update(`Pulling ${modelName}`, increment);
           currentProgress = completed;
         }
-      }
-    }
-  }
-
-
-  async pullModel(modelName: string, reportProgress: (progress: ProgressData) => void): Promise<void> {
-    return window.withProgress(
-      {
-        location: ProgressLocation.Notification,
-        title: `Installing model '${modelName}'`,
-        cancellable: true,
-      },
-      async (windowProgress, token) => {
-        let isCancelled = false;
-
-        token.onCancellationRequested(() => {
-          console.log(`Pulling ${modelName} model was cancelled`);
-          isCancelled = true;
-        });
-
-        const progressWrapper: Progress<ProgressData> = {
-          report: (data) => {
-            const completed = data.completed ? data.completed : 0;
-            const totalSize = data.total ? data.total : 0;
-            let message = data.status;
-            if (totalSize > 0) {
-              const progressValue = Math.round((completed / totalSize) * 100);
-              message = `${message} ${progressValue}%`;
-            }
-            //report to vscode progress notification
-            windowProgress.report({ increment: data.increment, message });
-            //report to progress object
-            reportProgress(data);
-          },
-        };
-
-        try {
-          this.installingModels.add(modelName);
-          await this.cancellablePullModel(modelName, progressWrapper, token);
-          if (isCancelled) {
-            throw new CancellationError();
-          }
-        } catch (error) {
-          if (isCancelled) {
-            throw new CancellationError();
-          }
-          throw error; // Re-throw other errors
-        } finally {
-          // Remove from installingModels once installation completes (success or error)
-          this.installingModels.delete(modelName);
-        }
-      }
-    );
-  }
-
-
-  async cancellablePullModel(modelName: string, progress: Progress<ProgressData>, token: any) {
-    const response = await fetch(`${this.serverUrl}/api/pull`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ name: modelName }),
-    });
-
-    const reader = response.body?.getReader();
-    let currentProgress = 0;
-
-    while (true) {
-      const { done, value } = await reader?.read() || { done: true, value: undefined };
-      if (done) {
-        break;
-      }
-
-      const chunk = new TextDecoder().decode(value);
-      const lines = chunk.split('\n').filter(Boolean);
-
-      for (const line of lines) {
-        const data = JSON.parse(line);
-        //console.log(data);
-        if (data.total) {
-          const completed = data.completed ? data.completed : 0;
-          const progressValue = Math.round((completed / data.total) * 100);
-          const increment = progressValue - currentProgress;
-          currentProgress = progressValue;
-
-          progress.report({
-            key: modelName,
-            increment,
-            completed,
-            total: data.total,
-            status: data.status,
-          });
-        } else {
-          progress.report({ key: modelName, increment: 0, status: data.status });
-        }
-      }
-
-      if (token.isCancellationRequested) {
-        reader?.cancel();
-        break;
       }
     }
   }

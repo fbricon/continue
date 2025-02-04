@@ -1,4 +1,3 @@
-import { ProgressData } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from "core/granite/commons/statuses";
 
 export interface IModelServer {
@@ -7,7 +6,6 @@ export interface IModelServer {
   startServer(): Promise<boolean>;
   installServer(mode: string): Promise<boolean>;
   getModelStatus(modelName?: string): Promise<ModelStatus>
-  installModel(modelName: string, reportProgress: (progress: ProgressData) => void): Promise<any>;
   supportedInstallModes(): Promise<{ id: string; label: string, supportsRefresh: boolean }[]>; //manual, script, homebrew
   listModels(): Promise<string[]>;
   //getModelInfo(modelName: string): Promise<ModelInfo | undefined>;

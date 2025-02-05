@@ -325,6 +325,9 @@ export class SetupGranitePage {
                 }
               }
             } catch (error: any) {
+              if (error?.name === "AbortError") {
+                return;
+              }
               console.error("Error during model installation", error);
               webview.postMessage({
                 command: "modelInstallationProgress",

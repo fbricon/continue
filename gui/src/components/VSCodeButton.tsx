@@ -28,6 +28,7 @@ export const VSCodeButton: React.FC<VSCodeButtonProps> = ({
       className={mergedClassName}
       style={baseStyle}
       disabled={disabled}
+      title={props.title}
       {...props}
     />
   );

@@ -319,7 +319,6 @@ export class OllamaServer implements IModelServer {
         const data = JSON.parse(line);
         //console.log(data);
         if (data.total) {
-          console.log(data);
           const completed = data.completed ? data.completed : 0;
           if (completed < currentProgress) {
             currentProgress = 0;

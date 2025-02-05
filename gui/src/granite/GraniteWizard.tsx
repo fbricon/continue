@@ -209,7 +209,7 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
     </>
   } else if (installationModes.length > 0) {
     serverButton = (
-      <VSCodeButton onClick={handleDownload} disabled={isOffline}>
+      <VSCodeButton onClick={handleDownload} disabled={isOffline} title={installationModes[0].label}>
         Download and Install Ollama
       </VSCodeButton>
     );
@@ -482,13 +482,8 @@ function init(): void {
 
 const WizardContent: React.FC = () => {
   const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel, modelInstallationProgress ,setModelInstallationProgress, setModelInstallationStatus, setIsOffline, setModelInstallationError } = useWizardContext();
-  const stepStatusesRef = useRef(stepStatuses);
   const currentStatusRef = useRef(currentStatus);
-  // Update ref when stepStatuses changes
-  useEffect(() => {
-    //TODO do we still need this?
-    stepStatusesRef.current = stepStatuses;
-  }, [stepStatuses]);
+
   // Update ref when currentStatus changes
   useEffect(() => {
     currentStatusRef.current = currentStatus;
@@ -503,7 +498,6 @@ const WizardContent: React.FC = () => {
       if (!command) {
         return;
       }
-      const currStepStatuses = stepStatusesRef.current;
       const currStatus = currentStatusRef.current;
       switch (command) {
         case "init": {
@@ -518,14 +512,12 @@ const WizardContent: React.FC = () => {
             if (wizardState?.selectedModelSize) {
               setSelectedModel(wizardState.selectedModelSize);
             } else {
-              console.log("Selecting recommended model as there's nothing prior " + recommendedModel);
               setSelectedModel(recommendedModel);
             }
             if (wizardState?.stepStatuses) {
               setStepStatuses(wizardState.stepStatuses);
             }
           } else {
-            console.log("Selecting recommended model " + recommendedModel);
             setSelectedModel(recommendedModel);
           }
 
@@ -557,7 +549,6 @@ const WizardContent: React.FC = () => {
           const progress = payload.data?.progress as ProgressData | undefined;
           if (progress && progress.total) {
             const progressPercentage = ((progress.completed ?? 0) / progress.total) * 100;
-            console.log("Model installation progress: " + progressPercentage);
             setModelInstallationProgress(Math.min(progressPercentage, 99.99));// Don't show 100% completion until it's actually done
           }
           const error = payload.data?.error as string | undefined;
@@ -565,7 +556,6 @@ const WizardContent: React.FC = () => {
             console.error("Model installation error: " + error);
             setModelInstallationProgress(0);
             setModelInstallationError("Unable to install the Granite Model: " + error);
-            //TODO Cancel download
           }
 
         }
@@ -640,6 +630,7 @@ const WizardContent: React.FC = () => {
           </div>
 
           {/* Right panel with image */}
+          {/*TODO make the image resize before being moved down*/}
           <div className="flex justify-center" style={{ flex: '1 1 auto' }}>
             <img
               src={`${window.vscMediaUrl}/granite/step_${activeStep + 1}.svg`}

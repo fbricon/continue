@@ -47,12 +47,17 @@ interface WizardContextProps {
   setModelStatus: React.Dispatch<React.SetStateAction<StatusValue>>;
   modelInstallationProgress: number;
   setModelInstallationProgress: React.Dispatch<React.SetStateAction<number>>;
+  modelInstallationError: string | undefined;
+  setModelInstallationError: React.Dispatch<React.SetStateAction<string | undefined>>;
   modelInstallationStatus: "idle" | "downloading" | "complete";
   setModelInstallationStatus: React.Dispatch<React.SetStateAction<"idle" | "downloading" | "complete">>;
   isOffline: boolean;
   setIsOffline: React.Dispatch<React.SetStateAction<boolean>>;
-  modelInstallationError: string | undefined;
-  setModelInstallationError: React.Dispatch<React.SetStateAction<string | undefined>>;
+  ollamaInstallationProgress: number;
+  setOllamaInstallationProgress: React.Dispatch<React.SetStateAction<number>>;
+  ollamaInstallationError: string | undefined;
+  setOllamaInstallationError: React.Dispatch<React.SetStateAction<string | undefined>>;
+
 }
 
 const WizardContext = createContext<WizardContextProps | undefined>(undefined);
@@ -80,9 +85,11 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [recommendedModel, setRecommendedModel] = useState<ModelType>("small");
   const [selectedModel, setSelectedModel] = useState<ModelType>(recommendedModel);
   const [modelInstallationProgress, setModelInstallationProgress] = useState<number>(0);
+  const [modelInstallationError, setModelInstallationError] = useState<string | undefined>();
+  const [ollamaInstallationProgress, setOllamaInstallationProgress] = useState<number>(0);
+  const [ollamaInstallationError, setOllamaInstallationError] = useState<string | undefined>();
   const [modelInstallationStatus, setModelInstallationStatus] = useState<"idle" | "downloading" | "complete">("idle");
   const [isOffline, setIsOffline] = useState(false);
-  const [modelInstallationError, setModelInstallationError] = useState<string | undefined>();
 
   return (
     <WizardContext.Provider value={{
@@ -97,6 +104,8 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
       modelStatus, setModelStatus,
       modelInstallationProgress, setModelInstallationProgress,
       modelInstallationStatus, setModelInstallationStatus,
+      ollamaInstallationProgress, setOllamaInstallationProgress,
+      ollamaInstallationError, setOllamaInstallationError,
       isOffline,
       setIsOffline,
       modelInstallationError,
@@ -166,8 +175,26 @@ const DiagnosticMessage: React.FC<{
   );
 };
 
+const ProgressBlock: React.FC<{ progress: number }> = ({ progress }) => {
+  return (
+    <div //following code soup is to minimize text wiggling during progress updates
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              opacity: 0.8
+            }}
+          >
+      <span className="inline-block text-right w-[55px] [font-variant-numeric:tabular-nums]">
+        {progress.toFixed(2)}%
+      </span>
+      <span className="ml-1">complete</span>
+    </div>
+  );
+};
+
 const OllamaInstallStep: React.FC<StepProps> = (props) => {
-  const { serverStatus, installationModes, setCurrentStatus, isOffline } = useWizardContext();
+  const { serverStatus, installationModes, currentStatus, setCurrentStatus, isOffline, ollamaInstallationError, ollamaInstallationProgress, setOllamaInstallationProgress } = useWizardContext();
 
   const handleDownload = () => {
     setCurrentStatus(WizardStatus.downloadingOllama);
@@ -179,9 +206,26 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
     });
   };
 
+  const cancelDownload = () => {
+    vscode.postMessage({
+      command: "cancelInstallation",
+      data: {
+        target: "ollama"
+      }
+    });
+    setCurrentStatus(WizardStatus.idle);
+    setOllamaInstallationProgress(0);
+  };
+
+  useEffect(() => {//cancel download on error
+    if (ollamaInstallationError || isOffline) {
+      cancelDownload();
+    }
+  }, [ollamaInstallationError, isOffline]);
+
   const isDevspaces = installationModes.length > 0 && installationModes[0].id === "devspaces";
 
-  let serverButton
+  let serverButton;
 
   if (serverStatus === ServerStatus.started || serverStatus === ServerStatus.stopped) {
     serverButton = (
@@ -226,7 +270,22 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
             Follow the guide to install Ollama on Red Hat Dev Spaces.
           </p>
         )}
-        {serverButton}
+
+        {currentStatus !== WizardStatus.downloadingOllama && serverButton}
+
+        {currentStatus === WizardStatus.downloadingOllama &&
+          <div className="mt-4 flex items-center gap-2">
+            <VSCodeButton
+              variant="secondary"
+              onClick={cancelDownload}
+            >
+              Cancel
+            </VSCodeButton>
+            not here
+            <ProgressBlock progress={ollamaInstallationProgress} />
+          </div>
+        }
+
         {!isDevspaces && installationModes.length > 0 && (
           <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
             If you prefer, you can also <a href='https://ollama.com/download'>install Ollama manually</a>.
@@ -245,7 +304,6 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
 
 const ModelSelectionStep: React.FC<StepProps> = (props) => {
   const { serverStatus, recommendedModel, selectedModel, setSelectedModel, modelInstallationProgress, setModelInstallationProgress, modelInstallationStatus, setModelInstallationStatus, isOffline, modelInstallationError, setModelInstallationError, systemInfo } = useWizardContext();
-  const progressInterval = useRef<NodeJS.Timeout>();
   const [systemError, setSystemError] = useState<string | undefined>();
 
   const startDownload = () => {
@@ -261,7 +319,10 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
 
   const cancelDownload = () => {
     vscode.postMessage({
-      command: "cancelModelInstallation",
+      command: "cancelInstallation",
+      data: {
+        target: "models"
+      }
     });
     setModelInstallationStatus('idle');
     setModelInstallationProgress(0);
@@ -294,14 +355,6 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
       }
     }
   }, [systemInfo, selectedModel]);
-
-  useEffect(() => { //Clear progress interval on unmount
-    return () => {
-      if (progressInterval.current) {
-        clearInterval(progressInterval.current);
-      }
-    };
-  }, []);
 
   const modelOptions: ModelOption[] = [
     {
@@ -387,19 +440,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
                   Cancel
                 </VSCodeButton>
 
-                <div //following code soup is to minimize text wiggling during progress updates
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    alignItems: 'center',
-                    opacity: 0.8
-                  }}
-                >
-                  <span className="inline-block text-right w-[55px] [font-variant-numeric:tabular-nums]">
-                    {modelInstallationProgress.toFixed(2)}%
-                  </span>
-                  <span className="ml-1">complete</span>
-                </div>
+                <ProgressBlock progress={modelInstallationProgress} />
               </>
             )}
           </div>
@@ -481,7 +522,21 @@ function init(): void {
 }
 
 const WizardContent: React.FC = () => {
-  const { currentStatus, setCurrentStatus, activeStep, stepStatuses, setActiveStep, setStepStatuses, setServerStatus, setSystemInfo, setInstallationModes, setRecommendedModel, setSelectedModel, modelInstallationProgress ,setModelInstallationProgress, setModelInstallationStatus, setIsOffline, setModelInstallationError } = useWizardContext();
+  const { currentStatus, setCurrentStatus,
+          activeStep, setActiveStep,
+          stepStatuses, setStepStatuses,
+          setServerStatus,
+          setSystemInfo,
+          setInstallationModes,
+          setRecommendedModel,
+          setSelectedModel,
+          setModelInstallationProgress,
+          setModelInstallationError,
+          setModelInstallationStatus,
+          setIsOffline,
+          setOllamaInstallationProgress,
+          setOllamaInstallationError
+        } = useWizardContext();
   const currentStatusRef = useRef(currentStatus);
 
   // Update ref when currentStatus changes
@@ -557,7 +612,23 @@ const WizardContent: React.FC = () => {
             setModelInstallationProgress(0);
             setModelInstallationError("Unable to install the Granite Model: " + error);
           }
-
+          break;
+        }
+        case "ollamaInstallationProgress": {
+          const progress = payload.data?.progress as ProgressData | undefined;
+          if (progress && progress.total) {
+            const progressPercentage = ((progress.completed ?? 0) / progress.total) * 100;
+            console.log("Ollama installation progress: " + progressPercentage);
+            setOllamaInstallationProgress(Math.min(progressPercentage, 99.99));// Don't show 100% completion until it's actually done
+          }
+          const error = payload.data?.error as string | undefined;
+          if (error) {
+            console.error("Ollama installation error: " + error);
+            setOllamaInstallationProgress(0);
+            setOllamaInstallationError("Unable to install Ollama: " + error);
+            //TODO Cancel download
+          }
+          break;
         }
       }
     };

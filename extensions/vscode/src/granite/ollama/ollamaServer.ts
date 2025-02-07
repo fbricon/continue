@@ -82,7 +82,7 @@ export class OllamaServer implements IModelServer {
       return true;
     } catch (error: any) {
       //TODO Check error
-      console.log("Ollama server is NOT started", error?.message);
+      //console.log("Ollama server is NOT started", error?.message);
       return false;
     }
   }
@@ -122,7 +122,7 @@ export class OllamaServer implements IModelServer {
     return false;
   }
 
-  async installServer(mode: string): Promise<boolean> {
+  async installServer(mode: string, token: CancellationToken, reportProgress: (progress: ProgressData) => void): Promise<boolean> {
     let installCommand: string | undefined;
     switch (mode) {
       case "devspaces": {
@@ -152,7 +152,7 @@ export class OllamaServer implements IModelServer {
         break;
       case "windows":
         this.currentStatus = ServerStatus.installing;
-        const ollamaInstallerPath = await this.downloadOllamaInstaller();
+        const ollamaInstallerPath = await this.downloadOllamaInstaller(token, reportProgress);
         if (!ollamaInstallerPath) {
           return false;
         }
@@ -182,17 +182,11 @@ export class OllamaServer implements IModelServer {
     return true;
   }
 
-  async downloadOllamaInstaller(): Promise<string | undefined> {
-    return await window.withProgress({
-      location: ProgressLocation.Notification,
-      title: `Downloading Ollama`,
-      cancellable: true,
-    }, async (progress, token) => {
+  async downloadOllamaInstaller(token: CancellationToken, reportProgress: (progress: ProgressData) => void): Promise<string | undefined> {
       const randomSuffix = Math.random().toString(36).substring(2, 10);
       const ollamaInstallerPath = path.join(os.tmpdir(), EXTENSION_ID, `OllamaSetup-${randomSuffix}.exe`);
-      await downloadFileFromUrl("https://ollama.com/download/OllamaSetup.exe", ollamaInstallerPath, token, progress);
+      await downloadFileFromUrl("https://ollama.com/download/OllamaSetup.exe", ollamaInstallerPath, token, new DownloadingProgressReporter(reportProgress));
       return ollamaInstallerPath;
-    });
   }
 
 
@@ -283,13 +277,15 @@ export class OllamaServer implements IModelServer {
     }
     const expectedTotal = modelInfos.reduce((sum, modelInfo) => sum + modelInfo.size, 0);
     console.log(`Expected total: ${expectedTotal}`);
-    const progressReporter = new ModelPullProgressReporter(expectedTotal, reportProgress);
+    const progressReporter = new DownloadingProgressReporter(reportProgress);
+    progressReporter.begin("Downloading models", expectedTotal)
     for (const modelInfo of modelInfos) {
       if (token.isCancellationRequested) {
         return false;
       }
       await this._pullModel(modelInfo.id, progressReporter, signal);
     }
+    progressReporter.done();
     return true;
   }
 
@@ -324,7 +320,7 @@ export class OllamaServer implements IModelServer {
             currentProgress = 0;
           }
           const increment = completed - currentProgress;
-          progressReporter.update(`Pulling ${modelName}`, increment);
+          progressReporter.update(increment, `Pulling ${modelName}`);
           currentProgress = completed;
         }
       }
@@ -383,17 +379,26 @@ function isDevspaces() {
   return process.env['DEVWORKSPACE_ID'] !== undefined;
 }
 
-class ModelPullProgressReporter implements ProgressReporter {
+class DownloadingProgressReporter implements ProgressReporter {
   private currentProgress = 0;
-  constructor(private total: number, private progress: (progress: ProgressData) => void) { }
-  update(name: string, work: number): void {
+  name: string | undefined;
+  total: number | undefined;
+  constructor(private progress: (progress: ProgressData) => void) { }
+  begin(name: string, total: number): void {
+    this.name = name;
+    this.total = total;
+  }
+  update(work: number, detail?: string): void {
     this.currentProgress += work;
     this.progress({
-      key: name,
+      key: this.name ?? 'Downloading',
       increment: work,
-      status: 'Downloading',
+      status: detail,
       completed: this.currentProgress,
       total: this.total
     });
+  }
+  done(): void {
+    this.update(this.total ?? 0);
   }
 }

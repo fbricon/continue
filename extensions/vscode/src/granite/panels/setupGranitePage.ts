@@ -2,7 +2,6 @@ import * as fs from 'fs';
 
 import { ConfigHandler } from 'core/config/ConfigHandler';
 import { EXTENSION_NAME } from 'core/control-plane/env';
-import { ConfiguredModels } from 'core/granite/commons/configuredModels';
 import { DOWNLOADABLE_MODELS } from 'core/granite/commons/modelRequirements';
 import { ProgressData } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from 'core/granite/commons/statuses';
@@ -53,6 +52,7 @@ export class SetupGranitePage {
    */
   private constructor(panel: WebviewPanel, context: ExtensionContext, private configHandler: ConfigHandler, defaultState?: WizardState) {
     this._panel = panel;
+    this._disposables.push(this._panel);
     this.server = new OllamaServer(context);
     this.wizardState = defaultState ? defaultState : { stepStatuses: [false, false, false] } as WizardState;
 
@@ -136,11 +136,7 @@ export class SetupGranitePage {
    */
   public dispose() {
     SetupGranitePage.currentPanel = undefined;
-
-    // Dispose of the current webview panel
-    this._panel.dispose();
-    this.modelInstallCanceller?.dispose();
-    // Dispose of all disposables (including the file watcher)
+    // Dispose of all disposables
     while (this._disposables.length) {
       const disposable = this._disposables.pop();
       if (disposable) {
@@ -232,6 +228,8 @@ export class SetupGranitePage {
    */
   private debounceStatus = 0;
   private modelInstallCanceller: CancellationTokenSource | undefined;
+  private ollamaInstallCanceller: CancellationTokenSource | undefined;
+
   private _setWebviewMessageListener(panel: WebviewPanel) {
     const webview = panel.webview;
     webview.onDidReceiveMessage(
@@ -251,20 +249,26 @@ export class SetupGranitePage {
             });
             break;
           case "installOllama":
-            await this.server.installServer(data.mode);
+            await this.installOllama(data.mode, panel);
             break;
           case "showTutorial":
             this.wizardState.stepStatuses[FINAL_STEP] = true;
             this.publishStatus(webview);
             await this.showTutorial();
             break;
-          case "cancelModelInstallation":
-            console.log("Cancelling model installation");
-            this.modelInstallCanceller?.cancel();
+          case "cancelInstallation":
+            const target = data.target;
+            if ("ollama" === target) {
+              console.log("Cancelling ollama installation");
+              this.ollamaInstallCanceller?.cancel();
+            } else {// models
+              console.log("Cancelling model installation");
+              this.modelInstallCanceller?.cancel();
+            }
             break;
           case "fetchStatus":
             const now = new Date().getTime();
-            // Careful here, we're receiving 2 messages in Dev mode on useEffect, because <App> is wrapped with <React.StrictMode>
+            // Careful here, we're receiving 2 messages in Dev mode on useEffect, because <GraniteWizard> is wrapped with <React.StrictMode>
             // see https://stackoverflow.com/questions/60618844/react-hooks-useeffect-is-called-twice-even-if-an-empty-array-is-used-as-an-ar
 
             if (this.debounceStatus > 0) {
@@ -279,68 +283,87 @@ export class SetupGranitePage {
             this.publishStatus(webview);
             break;
           case "selectModels":
-            const selectedModelSize = data.model as ModelType;
-            this.wizardState.selectedModelSize = selectedModelSize;
+            this.wizardState.selectedModelSize =  data.model as ModelType;;
             break;
           case "installModels":
-            // Check if the server is running, if not, start it and wait for it to be ready until timeout is reached
-            var { serverStatus, timeout } = await this.waitUntilOllamaStarts();
-
-            if (serverStatus !== ServerStatus.started) {
-              const errorMessage = `Ollama server failed to start in ${timeout / 1000} seconds`;
-              console.error(errorMessage);
-              webview.postMessage({
-                command: "modelInstallationProgress",
-                data: {
-                  error: errorMessage,
-                },
-              });
-              break;
-            }
-            console.log("Installing models");
-
-            async function reportProgress(progress: ProgressData) {
-              webview.postMessage({
-                command: "modelInstallationProgress",
-                data: {
-                  progress,
-                },
-              });
-            }
-            this.modelInstallCanceller?.dispose();
-            this.modelInstallCanceller = new CancellationTokenSource();
-            try {
-              const selectedModelSize = data.model as ModelType;
-              this.wizardState.selectedModelSize = selectedModelSize;
-              const result = await this.server.pullModels(selectedModelSize, this.modelInstallCanceller.token, reportProgress);
-              this.wizardState.stepStatuses[MODELS_STEP] = result;
-              this.publishStatus(webview);
-              if (result) {
-                await this.saveSettings(selectedModelSize);
-                if (!panel.visible) {
-                  const selection = await window.showInformationMessage("Granite.Code is ready to be used.", "Show Setup Wizard");
-                  if (selection) {
-                    panel.reveal();
-                  }
-                }
-              }
-            } catch (error: any) {
-              if (error?.name === "AbortError") {
-                return;
-              }
-              console.error("Error during model installation", error);
-              webview.postMessage({
-                command: "modelInstallationProgress",
-                data: {
-                  error: error.message,
-                },
-              });
-            }
+            await this.installModels(data.model as ModelType, panel);
         }
       },
       undefined,
       this._disposables
     );
+  }
+
+  private async installOllama(mode: string, panel: WebviewPanel) {
+    const webview = panel.webview;
+    this.ollamaInstallCanceller?.dispose();
+    this.ollamaInstallCanceller = new CancellationTokenSource();
+    this._disposables.push(this.ollamaInstallCanceller);
+    async function reportProgress(progress: ProgressData) {
+      if (mode !== "windows") {
+        return;
+      }
+      webview.postMessage({
+        command: "ollamaInstallationProgress",
+        data: {
+          progress,
+        },
+      });
+    }
+    await this.server.installServer(mode, this.ollamaInstallCanceller.token, reportProgress);
+  }
+
+  private async installModels(modelSize: ModelType, panel: WebviewPanel) {
+     // Check if the server is running, if not, start it and wait for it to be ready until timeout is reached
+     var { serverStatus, timeout } = await this.waitUntilOllamaStarts();
+     const webview = panel.webview;
+     if (serverStatus !== ServerStatus.started) {
+       const errorMessage = `Ollama server failed to start in ${timeout / 1000} seconds`;
+       console.error(errorMessage);
+       webview.postMessage({
+         command: "modelInstallationProgress",
+         data: {
+           error: errorMessage,
+         },
+       });
+       return;
+     }
+     console.log("Installing models");
+
+     async function reportProgress(progress: ProgressData) {
+       webview.postMessage({
+         command: "modelInstallationProgress",
+         data: {
+           progress,
+         },
+       });
+     }
+     this.modelInstallCanceller?.dispose();
+     this.modelInstallCanceller = new CancellationTokenSource();
+     this._disposables.push(this.modelInstallCanceller);
+     try {
+       this.wizardState.selectedModelSize = modelSize;
+       const result = await this.server.pullModels(modelSize, this.modelInstallCanceller.token, reportProgress);
+       this.wizardState.stepStatuses[MODELS_STEP] = result;
+       this.publishStatus(webview);
+       if (result) {
+         await this.saveSettings(modelSize);
+         if (!panel.visible) {
+           const selection = await window.showInformationMessage("Granite.Code is ready to be used.", "Show Setup Wizard");
+           if (selection) {
+             panel.reveal();
+           }
+         }
+       }
+     } catch (error: any) {
+       console.error("Error during model installation", error);
+       webview.postMessage({
+         command: "modelInstallationProgress",
+         data: {
+           error: error.message,
+         },
+       });
+     }
   }
 
   private async waitUntilOllamaStarts() {
@@ -363,41 +386,6 @@ export class SetupGranitePage {
     return { serverStatus, timeout };
   }
 
-  async getConfiguredModels(): Promise<ConfiguredModels> {
-    let { config } = await this.configHandler.loadConfig();
-    if (!config) {
-      throw new Error("Config not loaded");
-    }
-
-    let chatModel = null;
-    let embeddingsModel = null;
-    let tabAutocompleteModel = null;
-
-    for (const model of config.models) {
-      if (model.providerName === "ollama") {
-        chatModel = model.model;
-        break;
-      }
-    }
-
-    for (const model of config.tabAutocompleteModels ?? []) {
-      if (model.providerName === "ollama") {
-        tabAutocompleteModel = model.model;
-        break;
-      }
-    }
-
-    if (config.embeddingsProvider.providerName === "ollama") {
-      embeddingsModel = config.embeddingsProvider.model;
-    }
-
-    return {
-      chat: chatModel,
-      tabAutocomplete: tabAutocompleteModel,
-      embeddings: embeddingsModel,
-    };
-  }
-
   async getModelStatuses(): Promise<Map<string, ModelStatus>> {
     const modelStatuses: Map<string, ModelStatus> = new Map();
     await Promise.all(DOWNLOADABLE_MODELS.map(async (id) => {
@@ -412,13 +400,11 @@ export class SetupGranitePage {
     const serverStatus = await this.server.getStatus();
     const modelStatuses = await this.getModelStatuses();
     const modelStatusesObject = Object.fromEntries(modelStatuses); // Convert Map to Object
-    const configuredModels = await this.getConfiguredModels();
     this.wizardState.stepStatuses[OLLAMA_STEP] = serverStatus === ServerStatus.started || serverStatus === ServerStatus.stopped;
     webview.postMessage({
       command: "status",
       data: {
         serverStatus,
-        configuredModels: configuredModels,
         modelStatuses: modelStatusesObject,
         wizardState: this.wizardState,
       },

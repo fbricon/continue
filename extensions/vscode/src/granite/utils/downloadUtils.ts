@@ -7,12 +7,13 @@ import fetch from "node-fetch";
 import { CancellationToken, Progress } from "vscode";
 
 import { checkFileExists } from './fsUtils';
+import { ProgressReporter } from "core/granite/commons/progressData";
 
 export async function downloadFileFromUrl(
   url: string,
   destinationPath: string,
   token: CancellationToken,
-  progress?: Progress<{ message?: string; increment?: number }>
+  progressReporter: ProgressReporter
 ) {
   const fileName = destinationPath.split("/").pop()!;
   await fs.mkdir(path.dirname(destinationPath), { recursive: true });
@@ -24,11 +25,8 @@ export async function downloadFileFromUrl(
   if (!response.ok) {
     throw new Error(`Failed to download ${fileName}`);
   }
-
   const totalBytes = parseInt(response.headers.get('Content-Length') || '0');
-  let downloadedBytes = 0;
-  let lastReportedProgress = 0;
-
+  progressReporter.begin("Downloading Ollama", totalBytes);
   const body = response.body;
   if (!body) {
     throw new Error(`Failed to download ${fileName}`);
@@ -39,17 +37,7 @@ export async function downloadFileFromUrl(
     const reader = Readable.from(body);
 
     reader.on('data', (chunk) => {
-      downloadedBytes += chunk.length;
-      if (progress && totalBytes > 0) {
-        const currentProgress = Math.round((downloadedBytes / totalBytes) * 100);
-        if (currentProgress > lastReportedProgress) {
-          progress.report({
-            increment: currentProgress - lastReportedProgress,
-            message: `${currentProgress}%`
-          });
-          lastReportedProgress = currentProgress;
-        }
-      }
+      progressReporter.update(chunk.length);
     });
 
     reader.pipe(writer)
@@ -60,4 +48,5 @@ export async function downloadFileFromUrl(
   if (!(await checkFileExists(destinationPath))) {
     throw new Error(`${destinationPath} doesn't exist`);
   }
+  progressReporter.done();
 }

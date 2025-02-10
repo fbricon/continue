@@ -450,7 +450,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
       key: "small",
       name: "Small",
       description:
-        "For machines with less than 32GB of memory and slow graphics",
+        "For machines with less than 32GB of memory and a slow GPU",
     },
   ];
 

@@ -9,7 +9,7 @@ export type StatusValue = 'complete' | 'installing' | 'active' | 'missing';
  * StatusCheckProps represents the props that are passed to the StatusCheck component.
  */
 export interface StatusCheckProps {
-  type: StatusValue | null;
+  type: StatusValue;
   title?: string;
 }
 
@@ -21,8 +21,6 @@ const ICON_STYLE = { fontSize: '16px' };
  */
 export const StatusCheck: React.FC<StatusCheckProps> = ({ type, title }: StatusCheckProps) => {
   switch (type) {
-    case null:
-      return <VscCircleLargeFilled color={DEFAULT_COLOR} style={ICON_STYLE} />;
     case "complete":
       return <VscPassFilled color={DEFAULT_COLOR} title={title} style={ICON_STYLE} />;
     case "installing":

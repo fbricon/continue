@@ -4,14 +4,16 @@ import { ExclamationCircleIcon, ExclamationTriangleIcon, InformationCircleIcon }
 import { StatusCheck, StatusValue } from './StatusCheck';
 import { ServerStatus } from 'core/granite/commons/statuses';
 import { VSCodeButton } from '../components/VSCodeButton';
-import './GraniteWizard.css';
 import { isHighEndMachine, SystemInfo } from 'core/granite/commons/sysInfo';
-import { OLLAMA_STEP, MODELS_STEP, FINAL_STEP, WizardState, ModelType} from 'core/granite/commons/wizardState';
+import { OLLAMA_STEP, MODELS_STEP, FINAL_STEP, WizardState} from 'core/granite/commons/wizardState';
 import { vscode } from './utils/vscode';
 import { ProgressData } from 'core/granite/commons/progressData';
 import { formatSize } from 'core/granite/commons/textUtils';
 import { DEFAULT_MODEL_INFO } from 'core/granite/commons/modelInfo';
 import { DEFAULT_MODEL_GRANITE_LARGE, DEFAULT_MODEL_GRANITE_SMALL } from 'core/config/default';
+import { LocalModelSize } from 'core';
+import { ProgressBlock } from './ProgressBlock';
+import { DiagnosticMessage } from './DiagnosticMessage';
 
 interface InstallationMode {
   id: string;
@@ -39,10 +41,10 @@ interface WizardContextProps {
   setSystemInfo: React.Dispatch<React.SetStateAction<SystemInfo | null>>;
   installationModes: InstallationMode[];
   setInstallationModes: React.Dispatch<React.SetStateAction<InstallationMode[]>>;
-  recommendedModel: ModelType;
-  setRecommendedModel: React.Dispatch<React.SetStateAction<ModelType>>;
-  selectedModel: ModelType;
-  setSelectedModel: React.Dispatch<React.SetStateAction<ModelType>>;
+  recommendedModel: LocalModelSize;
+  setRecommendedModel: React.Dispatch<React.SetStateAction<LocalModelSize>>;
+  selectedModel: LocalModelSize;
+  setSelectedModel: React.Dispatch<React.SetStateAction<LocalModelSize>>;
   modelStatus: StatusValue;
   setModelStatus: React.Dispatch<React.SetStateAction<StatusValue>>;
   modelInstallationProgress: number;
@@ -82,8 +84,8 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [modelStatus, setModelStatus] = useState<StatusValue>('missing');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [installationModes, setInstallationModes] = useState<InstallationMode[]>([]);
-  const [recommendedModel, setRecommendedModel] = useState<ModelType>("small");
-  const [selectedModel, setSelectedModel] = useState<ModelType>(recommendedModel);
+  const [recommendedModel, setRecommendedModel] = useState<LocalModelSize>("small");
+  const [selectedModel, setSelectedModel] = useState<LocalModelSize>(recommendedModel);
   const [modelInstallationProgress, setModelInstallationProgress] = useState<number>(0);
   const [modelInstallationError, setModelInstallationError] = useState<string | undefined>();
   const [ollamaInstallationProgress, setOllamaInstallationProgress] = useState<number>(0);
@@ -117,7 +119,7 @@ export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
 };
 
 interface ModelOption {
-  key: ModelType;
+  key: LocalModelSize;
   name: string;
   description: string;
 }
@@ -139,7 +141,11 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
 
   return (
     <div
-      className={`wizard-step ${isActive ? 'active' : ''}`}
+      className={`p-4 rounded-md transition-colors duration-100 ease-in-out mb-[1px]
+        ${isActive
+          ? 'border border-[var(--vscode-welcomePage-tileBorder)] bg-[var(--vscode-welcomePage-tileBackground)]'
+          : 'hover:bg-[var(--vscode-welcomePage-tileHoverBackground,rgba(255,255,255,0.04))]'
+        }`}
       onClick={onClick}
       onKeyDown={handleKeyDown}
       tabIndex={0}
@@ -149,46 +155,16 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
       <div>
         <div className="flex items-center cursor-pointer">
           <StatusCheck type={status ? 'complete' : (isActive ? 'active' : 'missing')} />
-          <h3 className="ml-3 wizard-step-title inline">
+          <h3 className={`ml-3 font-semibold text-sm leading-[1.4] m-0
+            ${isActive
+              ? 'text-[var(--vscode-peekViewTitleLabel-foreground)]'
+              : 'text-[var(--vscode-descriptionForeground)]'
+            }`}>
             {title}
           </h3>
         </div>
         {isActive && <div className="ml-7">{children}</div>}
       </div>
-    </div>
-  );
-};
-
-const DiagnosticMessage: React.FC<{
-  type: 'warning' | 'info' | 'error';
-  message: string;
-}> = ({ type, message }) => {
-  const color = (type === 'warning') ? 'var(--vscode-editorWarning-foreground, #f48771)' : (type === 'info') ? 'var(--vscode-editorInfo-foreground)' : 'var(--vscode-editorError-foreground)';
-  const Icon = (type === 'warning') ? ExclamationTriangleIcon : (type === 'info') ? InformationCircleIcon : ExclamationCircleIcon;
-  return (
-    <div className="mt-4 flex items-start space-x-2">
-      <Icon className="h-4 w-4 mt-0.5" style={{ color }} aria-hidden="true" />
-      <span className="text-sm">
-       {message}
-      </span>
-    </div>
-  );
-};
-
-const ProgressBlock: React.FC<{ progress: number }> = ({ progress }) => {
-  return (
-    <div //following code soup is to minimize text wiggling during progress updates
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              opacity: 0.8
-            }}
-          >
-      <span className="inline-block text-right w-[55px] [font-variant-numeric:tabular-nums]">
-        {progress.toFixed(2)}%
-      </span>
-      <span className="ml-1">complete</span>
     </div>
   );
 };
@@ -262,11 +238,11 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
   return (
     <WizardStep {...props}>
       <div className="mt-4">
-        <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+        <p className="text-sm text-[--vscode-editor-foreground]">
           Ollama is an open source tool that allows running AI models locally. It is required by Granite.Code.
         </p>
         {isDevspaces && (
-          <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+          <p className="text-sm text-[--vscode-editor-foreground]">
             Follow the guide to install Ollama on Red Hat Dev Spaces.
           </p>
         )}
@@ -287,7 +263,7 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
         }
 
         {!isDevspaces && installationModes.length > 0 && (
-          <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+          <p className="text-sm text-[--vscode-editor-foreground]">
             If you prefer, you can also <a href='https://ollama.com/download'>install Ollama manually</a>.
           </p>
         )}
@@ -328,7 +304,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
     setModelInstallationProgress(0);
   };
 
-  const handleModelChange = (value: ModelType) => {
+  const handleModelChange = (value: LocalModelSize) => {
     setSelectedModel(value);
     vscode.postMessage({
       command: "selectModels",
@@ -373,7 +349,7 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
     <WizardStep {...props}>
       {props.isActive && (
         <div className="mt-4">
-          <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+          <p className="text-sm text-[--vscode-editor-foreground]">
             Select which model you want to use. You can change this preference in the settings.
           </p>
           <RadioGroup value={selectedModel} onChange={handleModelChange} className="mt-4" disabled={modelInstallationStatus !== 'idle'}>
@@ -390,18 +366,17 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
                         type="radio"
                         checked={checked}
                         readOnly
-                        className="h-4 w-4 mt-2 border bg-transparent focus:ring-0 focus:ring-offset-0"
-                        style={{ borderColor: 'var(--vscode-editor-foreground)' }}
+                        className="h-4 w-4 mt-2 border border-[--vscode-editor-foreground] bg-transparent focus:ring-0 focus:ring-offset-0"
                       />
                       <div className="ml-3 space-y-1">
-                        <RadioGroup.Label style={{ color: 'var(--vscode-editor-foreground)', fontWeight: 'bold' }}>
+                        <RadioGroup.Label className="text-[--vscode-editor-foreground] font-bold">
                           {option.name}
                         </RadioGroup.Label>
-                        <RadioGroup.Description className="text-sm leading-normal" style={{ color: 'var(--vscode-editor-foreground)', opacity: 0.8 }}>
+                        <RadioGroup.Description className="text-sm leading-normal text-[--vscode-editor-foreground] opacity-80">
                           {option.description}
                         </RadioGroup.Description>
                         {option.key === recommendedModel && (
-                          <p className="text-sm leading-normal" style={{ color: 'var(--vscode-editorWarning-foreground, #ddb100)' }}>
+                          <p className="text-sm leading-normal text-[--vscode-editorWarning-foreground,#ddb100]">
                             Recommended for your machine
                           </p>
                         )}
@@ -486,7 +461,7 @@ const StartLocalAIStep: React.FC<StepProps> = (props) => {
     <WizardStep {...props}>
       {props.isActive && (
         <div className="mt-4">
-          <p className="text-sm" style={{ color: 'var(--vscode-editor-foreground)' }}>
+          <p className="text-sm text-[--vscode-editor-foreground]">
             Granite.Code is ready to be used
           </p>
           <VSCodeButton
@@ -670,21 +645,21 @@ const WizardContent: React.FC = () => {
   return (
     <div className="h-full w-full" role="tablist">
       {/* Main container with responsive layout */}
-      <div className="px-10 pt-1 max-w-[1400px] mx-10 [&:global]:min-w-[800px]:px-16 [&:global]:min-w-[800px]:pt-6">
-        <div className="flex flex-col [&>*]:w-full" style={{ gap: '2rem' }}>
+      <div className="px-10 pt-1 max-w-[1400px] mx-10 md:px-16 md:pt-6">
+        <div className="flex flex-col md:flex-row gap-8">
           {/* Left panel with text and steps */}
-          <div className="max-w-[600px]" style={{ flex: '1 1 auto' }}>
-            <h2 className="text-3xl font-normal mb-2" style={{ color: 'var(--vscode-foreground)' }}>
+          <div className="max-w-[600px] flex-1">
+            <h2 className="text-3xl font-normal mb-2 text-[--vscode-foreground]">
               Granite.Code
             </h2>
-            <h2 className="text-2xl font-light mb-1" style={{ color: 'var(--vscode-foreground)' }}>
+            <h2 className="text-2xl font-light mb-1 text-[--vscode-foreground]">
               Local AI setup
             </h2>
-            <p className="mb-8" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            <p className="mb-8 text-[--vscode-descriptionForeground]">
               Follow these simple steps to start using local AI.
             </p>
 
-            <div className="space-y-0.5[1px]">
+            <div className="space-y-[1px]">
               {steps.map((step, index) => {
                 const StepComponent = step.component;
                 return (
@@ -702,38 +677,20 @@ const WizardContent: React.FC = () => {
 
           {/* Right panel with image */}
           {/*TODO make the image resize before being moved down*/}
-          <div className="flex justify-center" style={{ flex: '1 1 auto' }}>
+          <div className="flex justify-center flex-1">
             <img
               src={`${window.vscMediaUrl}/granite/step_${activeStep + 1}.svg`}
               alt={`Step ${activeStep + 1} illustration`}
-              className="max-w-full h-auto object-contain"
-              style={{
-                opacity: 0.9,
-                maxHeight: '400px'
-              }}
+              className="max-w-full h-auto object-contain opacity-90 max-h-[400px]"
             />
           </div>
         </div>
       </div>
-
-      {/* Add custom media query for layout change at 800px */}
-      <style>
-        {`
-          @media (min-width: 800px) {
-            .flex-col {
-              flex-direction: row !important;
-            }
-            .flex-col > * {
-              width: 50% !important;
-            }
-          }
-        `}
-      </style>
     </div>
   );
 };
 
-function getRequiredSpace(selectedModel: string): number {
+function getRequiredSpace(selectedModel: LocalModelSize): number {
   //FIXME check if model is already downloaded
   const graniteModel = (selectedModel === 'large') ? DEFAULT_MODEL_GRANITE_LARGE : DEFAULT_MODEL_GRANITE_SMALL;
   const models: string[] = [graniteModel.model, 'nomic-embed-text:latest'];

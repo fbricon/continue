@@ -25,6 +25,7 @@ import {
   setupStatusBar,
 } from "./autocomplete/statusBar";
 import { ContinueGUIWebviewViewProvider } from "./ContinueGUIWebviewViewProvider";
+
 import { VerticalDiffManager } from "./diff/vertical/manager";
 import { SetupGranitePage } from "./granite/panels/setupGranitePage";
 import EditDecorationManager from "./quickEdit/EditDecorationManager";

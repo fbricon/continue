@@ -4,23 +4,20 @@ import * as path from 'path';
 import { Readable } from "stream";
 
 import fetch from "node-fetch";
-import { CancellationToken, Progress } from "vscode";
+import { ProgressReporter } from "core/granite/commons/progressData";
 
 import { checkFileExists } from './fsUtils';
-import { ProgressReporter } from "core/granite/commons/progressData";
 
 export async function downloadFileFromUrl(
   url: string,
   destinationPath: string,
-  token: CancellationToken,
+  signal: AbortSignal,
   progressReporter: ProgressReporter
 ) {
   const fileName = destinationPath.split("/").pop()!;
   await fs.mkdir(path.dirname(destinationPath), { recursive: true });
 
-  const controller = new AbortController();
-  token.onCancellationRequested(() => controller.abort());
-  const response = await fetch(url, { signal: controller.signal });
+  const response = await fetch(url, { signal });
 
   if (!response.ok) {
     throw new Error(`Failed to download ${fileName}`);
@@ -43,6 +40,14 @@ export async function downloadFileFromUrl(
     reader.pipe(writer)
       .on('finish', resolve)
       .on('error', reject);
+
+    // Handle abortion
+    signal.addEventListener('abort', () => {
+      reader.destroy(); // Stop reading
+      writer.destroy(); // Close the file
+      fs.unlink(destinationPath).catch(() => {}); // Delete the partial file
+      reject(new Error('Download cancelled'));
+    });
   });
 
   if (!(await checkFileExists(destinationPath))) {

@@ -5,7 +5,7 @@ import { EXTENSION_NAME } from 'core/control-plane/env';
 import { DOWNLOADABLE_MODELS } from 'core/granite/commons/modelRequirements';
 import { ProgressData } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from 'core/granite/commons/statuses';
-import { FINAL_STEP, MODELS_STEP, ModelType, OLLAMA_STEP, WizardState } from 'core/granite/commons/wizardState';
+import { FINAL_STEP, MODELS_STEP, OLLAMA_STEP, WizardState } from 'core/granite/commons/wizardState';
 import {
   CancellationTokenSource,
   commands,
@@ -24,6 +24,8 @@ import { OllamaServer } from "../ollama/ollamaServer";
 import { getNonce } from "../utils/getNonce";
 import { getUri } from "../utils/getUri";
 import { getSystemInfo } from "../utils/sysUtils";
+import { LocalModelSize } from 'core';
+import { CancellationController } from '../utils/CancellationController';
 
 
 /**
@@ -227,8 +229,8 @@ export class SetupGranitePage {
    * @param context A reference to the extension context
    */
   private debounceStatus = 0;
-  private modelInstallCanceller: CancellationTokenSource | undefined;
-  private ollamaInstallCanceller: CancellationTokenSource | undefined;
+  private modelInstallCanceller: CancellationController | undefined;
+  private ollamaInstallCanceller: CancellationController | undefined;
 
   private _setWebviewMessageListener(panel: WebviewPanel) {
     const webview = panel.webview;
@@ -283,10 +285,11 @@ export class SetupGranitePage {
             this.publishStatus(webview);
             break;
           case "selectModels":
-            this.wizardState.selectedModelSize =  data.model as ModelType;;
+            this.wizardState.selectedModelSize =  data.model as LocalModelSize;;
             break;
           case "installModels":
-            await this.installModels(data.model as ModelType, panel);
+            await this.installModels(data.model as LocalModelSize, panel);
+            break;
         }
       },
       undefined,
@@ -297,8 +300,9 @@ export class SetupGranitePage {
   private async installOllama(mode: string, panel: WebviewPanel) {
     const webview = panel.webview;
     this.ollamaInstallCanceller?.dispose();
-    this.ollamaInstallCanceller = new CancellationTokenSource();
+    this.ollamaInstallCanceller = new CancellationController();
     this._disposables.push(this.ollamaInstallCanceller);
+
     async function reportProgress(progress: ProgressData) {
       if (mode !== "windows") {
         return;
@@ -310,10 +314,12 @@ export class SetupGranitePage {
         },
       });
     }
-    await this.server.installServer(mode, this.ollamaInstallCanceller.token, reportProgress);
+
+    // Convert CancellationToken to AbortSignal
+    await this.server.installServer(mode, this.ollamaInstallCanceller.signal, reportProgress);
   }
 
-  private async installModels(modelSize: ModelType, panel: WebviewPanel) {
+  private async installModels(modelSize: LocalModelSize, panel: WebviewPanel) {
      // Check if the server is running, if not, start it and wait for it to be ready until timeout is reached
      var { serverStatus, timeout } = await this.waitUntilOllamaStarts();
      const webview = panel.webview;
@@ -339,11 +345,11 @@ export class SetupGranitePage {
        });
      }
      this.modelInstallCanceller?.dispose();
-     this.modelInstallCanceller = new CancellationTokenSource();
+     this.modelInstallCanceller = new CancellationController();
      this._disposables.push(this.modelInstallCanceller);
      try {
        this.wizardState.selectedModelSize = modelSize;
-       const result = await this.server.pullModels(modelSize, this.modelInstallCanceller.token, reportProgress);
+       const result = await this.server.pullModels(modelSize, this.modelInstallCanceller.signal, reportProgress);
        this.wizardState.stepStatuses[MODELS_STEP] = result;
        this.publishStatus(webview);
        if (result) {
@@ -415,7 +421,7 @@ export class SetupGranitePage {
     await commands.executeCommand("granite.showTutorial");
   }
 
-  async saveSettings(modelSize: string): Promise<void> {
+  async saveSettings(modelSize: LocalModelSize): Promise<void> {
     console.log("Saving settings for model size: " + modelSize);
     const config = workspace.getConfiguration(EXTENSION_NAME);
     await config.update('localModelSize', modelSize, true);

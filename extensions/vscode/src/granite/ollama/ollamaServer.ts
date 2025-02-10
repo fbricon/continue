@@ -2,12 +2,11 @@ import os from "os";
 import path from 'path';
 
 import { DEFAULT_MODEL_GRANITE_LARGE, DEFAULT_MODEL_GRANITE_SMALL } from "core/config/default";
-import { EXTENSION_ID } from "core/granite/commons/constants";
 import { DEFAULT_MODEL_INFO, ModelInfo } from "core/granite/commons/modelInfo";
 import { getStandardName } from "core/granite/commons/naming";
 import { ProgressData, ProgressReporter } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from "core/granite/commons/statuses";
-import { CancellationToken, env, ExtensionContext, ProgressLocation, Uri, window } from "vscode";
+import { env, ExtensionContext, Uri, CancellationToken } from "vscode";
 
 import { IModelServer } from "../modelServer";
 import { terminalCommandRunner } from "../terminal/terminalCommandRunner";
@@ -15,7 +14,9 @@ import { executeCommand } from "../utils/cpUtils";
 import { downloadFileFromUrl } from "../utils/downloadUtils";
 
 import { getRemoteModelInfo } from "./ollamaLibrary";
-import { isOllamaInstalled, startLocalOllama } from "core/util/ollamaHelper";
+import { isOllamaInstalled } from "core/util/ollamaHelper";
+import { EXTENSION_NAME } from "core/control-plane/env";
+import { LocalModelSize } from "core";
 
 const PLATFORM = os.platform();
 
@@ -98,13 +99,13 @@ export class OllamaServer implements IModelServer {
       ].join(' ; ');
     } else if (isMac()) {
       startCommand = [
-        //'set -e',  // Exit immediately if a command exits with a non-zero status
+        'set -e',  // Exit immediately if a command exits with a non-zero status
         'open -a Ollama.app',
       ].join(' && ');
     } else {//Linux
       const start_ollama_sh = path.join(this.context.extensionPath, 'start_ollama.sh');
       startCommand = [
-        //'set -e',  // Exit immediately if a command exits with a non-zero status
+        'set -e',  // Exit immediately if a command exits with a non-zero status
         `chmod +x "${start_ollama_sh}"`,  // Ensure the script is executable
         `"${start_ollama_sh}"`,  // Use quotes in case the path contains spaces
       ].join(' && ');
@@ -122,7 +123,7 @@ export class OllamaServer implements IModelServer {
     return false;
   }
 
-  async installServer(mode: string, token: CancellationToken, reportProgress: (progress: ProgressData) => void): Promise<boolean> {
+  async installServer(mode: string, signal: AbortSignal, reportProgress: (progress: ProgressData) => void): Promise<boolean> {
     let installCommand: string | undefined;
     switch (mode) {
       case "devspaces": {
@@ -152,7 +153,7 @@ export class OllamaServer implements IModelServer {
         break;
       case "windows":
         this.currentStatus = ServerStatus.installing;
-        const ollamaInstallerPath = await this.downloadOllamaInstaller(token, reportProgress);
+        const ollamaInstallerPath = await this.downloadOllamaInstaller(signal, reportProgress);
         if (!ollamaInstallerPath) {
           return false;
         }
@@ -182,10 +183,10 @@ export class OllamaServer implements IModelServer {
     return true;
   }
 
-  async downloadOllamaInstaller(token: CancellationToken, reportProgress: (progress: ProgressData) => void): Promise<string | undefined> {
+  async downloadOllamaInstaller(signal: AbortSignal, reportProgress: (progress: ProgressData) => void): Promise<string | undefined> {
       const randomSuffix = Math.random().toString(36).substring(2, 10);
-      const ollamaInstallerPath = path.join(os.tmpdir(), EXTENSION_ID, `OllamaSetup-${randomSuffix}.exe`);
-      await downloadFileFromUrl("https://ollama.com/download/OllamaSetup.exe", ollamaInstallerPath, token, new DownloadingProgressReporter(reportProgress));
+      const ollamaInstallerPath = path.join(os.tmpdir(), EXTENSION_NAME, `OllamaSetup-${randomSuffix}.exe`);
+      await downloadFileFromUrl("https://ollama.com/download/OllamaSetup.exe", ollamaInstallerPath, signal, new DownloadingProgressReporter(reportProgress));
       return ollamaInstallerPath;
   }
 
@@ -255,18 +256,17 @@ export class OllamaServer implements IModelServer {
     return models;
   }
 
-  async pullModels(type: string, token: CancellationToken, reportProgress: (progress: ProgressData) => void): Promise<boolean> {
+  async pullModels(type: LocalModelSize, signal: AbortSignal, reportProgress: (progress: ProgressData) => void): Promise<boolean> {
     const graniteModel = (type === 'large') ? DEFAULT_MODEL_GRANITE_LARGE : DEFAULT_MODEL_GRANITE_SMALL;
     const models: string[] = [graniteModel.model, 'nomic-embed-text:latest'];
-    const abortController = new AbortController();
-    token.onCancellationRequested(() => {
-      abortController.abort();
-    });
+
+    if (signal.aborted) {
+      return false;
+    }
 
     const modelInfos: ModelInfo[] = [];
-    const signal = abortController.signal;
     for (const model of models) {
-      if (token.isCancellationRequested) {
+      if (signal.aborted) {
         return false;
       }
       const modelInfo = await this.fetchModelInfo(model, signal);
@@ -280,7 +280,7 @@ export class OllamaServer implements IModelServer {
     const progressReporter = new DownloadingProgressReporter(reportProgress);
     progressReporter.begin("Downloading models", expectedTotal)
     for (const modelInfo of modelInfos) {
-      if (token.isCancellationRequested) {
+      if (signal.aborted) {
         return false;
       }
       await this._pullModel(modelInfo.id, progressReporter, signal);
@@ -317,6 +317,7 @@ export class OllamaServer implements IModelServer {
         if (data.total) {
           const completed = data.completed ? data.completed : 0;
           if (completed < currentProgress) {
+            //When switching to another layer, we need to reset the current progress
             currentProgress = 0;
           }
           const increment = completed - currentProgress;

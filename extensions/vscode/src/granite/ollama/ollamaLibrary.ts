@@ -45,7 +45,7 @@ export async function getRemoteModelInfo(modelId: string, signal?: AbortSignal):
   }
 
   // Cache the failure
-  //cache.set(modelId, undefined);
+  cache.set(modelId, undefined);
   return undefined;
 }
 

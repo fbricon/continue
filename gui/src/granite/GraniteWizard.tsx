@@ -1,19 +1,38 @@
-import React, { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
-import { RadioGroup } from '@headlessui/react';
-import { ExclamationCircleIcon, ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
-import { StatusCheck, StatusValue } from './StatusCheck';
-import { ServerStatus } from 'core/granite/commons/statuses';
-import { VSCodeButton } from '../components/VSCodeButton';
-import { isHighEndMachine, SystemInfo } from 'core/granite/commons/sysInfo';
-import { OLLAMA_STEP, MODELS_STEP, FINAL_STEP, WizardState} from 'core/granite/commons/wizardState';
-import { vscode } from './utils/vscode';
-import { ProgressData } from 'core/granite/commons/progressData';
-import { formatSize } from 'core/granite/commons/textUtils';
-import { DEFAULT_MODEL_INFO } from 'core/granite/commons/modelInfo';
-import { DEFAULT_MODEL_GRANITE_LARGE, DEFAULT_MODEL_GRANITE_SMALL } from 'core/config/default';
-import { LocalModelSize } from 'core';
-import { ProgressBlock } from './ProgressBlock';
-import { DiagnosticMessage } from './DiagnosticMessage';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  createContext,
+  useContext,
+  ReactNode,
+} from "react";
+import { RadioGroup } from "@headlessui/react";
+import {
+  ExclamationCircleIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+} from "@heroicons/react/24/outline";
+import { StatusCheck, StatusValue } from "./StatusCheck";
+import { ServerStatus } from "core/granite/commons/statuses";
+import { VSCodeButton } from "../components/VSCodeButton";
+import { isHighEndMachine, SystemInfo } from "core/granite/commons/sysInfo";
+import {
+  OLLAMA_STEP,
+  MODELS_STEP,
+  FINAL_STEP,
+  WizardState,
+} from "core/granite/commons/wizardState";
+import { vscode } from "./utils/vscode";
+import { ProgressData } from "core/granite/commons/progressData";
+import { formatSize } from "core/granite/commons/textUtils";
+import { DEFAULT_MODEL_INFO } from "core/granite/commons/modelInfo";
+import {
+  DEFAULT_MODEL_GRANITE_LARGE,
+  DEFAULT_MODEL_GRANITE_SMALL,
+} from "core/config/default";
+import { LocalModelSize } from "core";
+import { ProgressBlock } from "./ProgressBlock";
+import { DiagnosticMessage } from "./DiagnosticMessage";
 
 interface InstallationMode {
   id: string;
@@ -25,7 +44,7 @@ enum WizardStatus {
   idle,
   downloadingOllama,
   startingOllama,
-  downloadingModel
+  downloadingModel,
 }
 
 interface WizardContextProps {
@@ -40,7 +59,9 @@ interface WizardContextProps {
   systemInfo: SystemInfo | null;
   setSystemInfo: React.Dispatch<React.SetStateAction<SystemInfo | null>>;
   installationModes: InstallationMode[];
-  setInstallationModes: React.Dispatch<React.SetStateAction<InstallationMode[]>>;
+  setInstallationModes: React.Dispatch<
+    React.SetStateAction<InstallationMode[]>
+  >;
   recommendedModel: LocalModelSize;
   setRecommendedModel: React.Dispatch<React.SetStateAction<LocalModelSize>>;
   selectedModel: LocalModelSize;
@@ -50,16 +71,21 @@ interface WizardContextProps {
   modelInstallationProgress: number;
   setModelInstallationProgress: React.Dispatch<React.SetStateAction<number>>;
   modelInstallationError: string | undefined;
-  setModelInstallationError: React.Dispatch<React.SetStateAction<string | undefined>>;
+  setModelInstallationError: React.Dispatch<
+    React.SetStateAction<string | undefined>
+  >;
   modelInstallationStatus: "idle" | "downloading" | "complete";
-  setModelInstallationStatus: React.Dispatch<React.SetStateAction<"idle" | "downloading" | "complete">>;
+  setModelInstallationStatus: React.Dispatch<
+    React.SetStateAction<"idle" | "downloading" | "complete">
+  >;
   isOffline: boolean;
   setIsOffline: React.Dispatch<React.SetStateAction<boolean>>;
   ollamaInstallationProgress: number;
   setOllamaInstallationProgress: React.Dispatch<React.SetStateAction<number>>;
   ollamaInstallationError: string | undefined;
-  setOllamaInstallationError: React.Dispatch<React.SetStateAction<string | undefined>>;
-
+  setOllamaInstallationError: React.Dispatch<
+    React.SetStateAction<string | undefined>
+  >;
 }
 
 const WizardContext = createContext<WizardContextProps | undefined>(undefined);
@@ -67,7 +93,7 @@ const WizardContext = createContext<WizardContextProps | undefined>(undefined);
 export const useWizardContext = (): WizardContextProps => {
   const context = useContext(WizardContext);
   if (!context) {
-    throw new Error('useWizardContext must be used within a WizardProvider');
+    throw new Error("useWizardContext must be used within a WizardProvider");
   }
   return context;
 };
@@ -78,41 +104,76 @@ interface WizardProviderProps {
 
 export const WizardProvider: React.FC<WizardProviderProps> = ({ children }) => {
   const [activeStep, setActiveStep] = useState(0);
-  const [currentStatus, setCurrentStatus] = useState<WizardStatus>(WizardStatus.idle);
-  const [stepStatuses, setStepStatuses] = useState<boolean[]>([false, false, false]);
-  const [serverStatus, setServerStatus] = useState<ServerStatus>(ServerStatus.unknown);
-  const [modelStatus, setModelStatus] = useState<StatusValue>('missing');
+  const [currentStatus, setCurrentStatus] = useState<WizardStatus>(
+    WizardStatus.idle,
+  );
+  const [stepStatuses, setStepStatuses] = useState<boolean[]>([
+    false,
+    false,
+    false,
+  ]);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>(
+    ServerStatus.unknown,
+  );
+  const [modelStatus, setModelStatus] = useState<StatusValue>("missing");
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  const [installationModes, setInstallationModes] = useState<InstallationMode[]>([]);
-  const [recommendedModel, setRecommendedModel] = useState<LocalModelSize>("small");
-  const [selectedModel, setSelectedModel] = useState<LocalModelSize>(recommendedModel);
-  const [modelInstallationProgress, setModelInstallationProgress] = useState<number>(0);
-  const [modelInstallationError, setModelInstallationError] = useState<string | undefined>();
-  const [ollamaInstallationProgress, setOllamaInstallationProgress] = useState<number>(0);
-  const [ollamaInstallationError, setOllamaInstallationError] = useState<string | undefined>();
-  const [modelInstallationStatus, setModelInstallationStatus] = useState<"idle" | "downloading" | "complete">("idle");
+  const [installationModes, setInstallationModes] = useState<
+    InstallationMode[]
+  >([]);
+  const [recommendedModel, setRecommendedModel] =
+    useState<LocalModelSize>("small");
+  const [selectedModel, setSelectedModel] =
+    useState<LocalModelSize>(recommendedModel);
+  const [modelInstallationProgress, setModelInstallationProgress] =
+    useState<number>(0);
+  const [modelInstallationError, setModelInstallationError] = useState<
+    string | undefined
+  >();
+  const [ollamaInstallationProgress, setOllamaInstallationProgress] =
+    useState<number>(0);
+  const [ollamaInstallationError, setOllamaInstallationError] = useState<
+    string | undefined
+  >();
+  const [modelInstallationStatus, setModelInstallationStatus] = useState<
+    "idle" | "downloading" | "complete"
+  >("idle");
   const [isOffline, setIsOffline] = useState(false);
 
   return (
-    <WizardContext.Provider value={{
-      currentStatus, setCurrentStatus,
-      activeStep, setActiveStep,
-      stepStatuses, setStepStatuses,
-      serverStatus, setServerStatus,
-      systemInfo, setSystemInfo,
-      installationModes, setInstallationModes,
-      recommendedModel, setRecommendedModel,
-      selectedModel, setSelectedModel,
-      modelStatus, setModelStatus,
-      modelInstallationProgress, setModelInstallationProgress,
-      modelInstallationStatus, setModelInstallationStatus,
-      ollamaInstallationProgress, setOllamaInstallationProgress,
-      ollamaInstallationError, setOllamaInstallationError,
-      isOffline,
-      setIsOffline,
-      modelInstallationError,
-      setModelInstallationError
-    }}>
+    <WizardContext.Provider
+      value={{
+        currentStatus,
+        setCurrentStatus,
+        activeStep,
+        setActiveStep,
+        stepStatuses,
+        setStepStatuses,
+        serverStatus,
+        setServerStatus,
+        systemInfo,
+        setSystemInfo,
+        installationModes,
+        setInstallationModes,
+        recommendedModel,
+        setRecommendedModel,
+        selectedModel,
+        setSelectedModel,
+        modelStatus,
+        setModelStatus,
+        modelInstallationProgress,
+        setModelInstallationProgress,
+        modelInstallationStatus,
+        setModelInstallationStatus,
+        ollamaInstallationProgress,
+        setOllamaInstallationProgress,
+        ollamaInstallationError,
+        setOllamaInstallationError,
+        isOffline,
+        setIsOffline,
+        modelInstallationError,
+        setModelInstallationError,
+      }}
+    >
       {children}
     </WizardContext.Provider>
   );
@@ -132,20 +193,26 @@ interface StepProps {
   children?: React.ReactNode;
 }
 
-const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, children }) => {
+const WizardStep: React.FC<StepProps> = ({
+  isActive,
+  onClick,
+  status,
+  title,
+  children,
+}) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (e.key === "Enter" || e.key === " ") {
       onClick?.();
     }
   };
 
   return (
     <div
-      className={`p-4 rounded-md transition-colors duration-100 ease-in-out mb-[1px]
-        ${isActive
-          ? 'border border-[var(--vscode-welcomePage-tileBorder)] bg-[var(--vscode-welcomePage-tileBackground)]'
-          : 'hover:bg-[var(--vscode-welcomePage-tileHoverBackground,rgba(255,255,255,0.04))]'
-        }`}
+      className={`mb-[1px] rounded-md p-4 transition-colors duration-100 ease-in-out ${
+        isActive
+          ? "border border-[var(--vscode-welcomePage-tileBorder)] bg-[var(--vscode-welcomePage-tileBackground)]"
+          : "hover:bg-[var(--vscode-welcomePage-tileHoverBackground,rgba(255,255,255,0.04))]"
+      }`}
       onClick={onClick}
       onKeyDown={handleKeyDown}
       tabIndex={0}
@@ -153,13 +220,17 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
       aria-pressed={isActive}
     >
       <div>
-        <div className="flex items-center cursor-pointer">
-          <StatusCheck type={status ? 'complete' : (isActive ? 'active' : 'missing')} />
-          <h3 className={`ml-3 font-semibold text-sm leading-[1.4] m-0
-            ${isActive
-              ? 'text-[var(--vscode-peekViewTitleLabel-foreground)]'
-              : 'text-[var(--vscode-descriptionForeground)]'
-            }`}>
+        <div className="flex cursor-pointer items-center">
+          <StatusCheck
+            type={status ? "complete" : isActive ? "active" : "missing"}
+          />
+          <h3
+            className={`m-0 ml-3 text-sm font-semibold leading-[1.4] ${
+              isActive
+                ? "text-[var(--vscode-peekViewTitleLabel-foreground)]"
+                : "text-[var(--vscode-descriptionForeground)]"
+            }`}
+          >
             {title}
           </h3>
         </div>
@@ -170,7 +241,16 @@ const WizardStep: React.FC<StepProps> = ({ isActive, onClick, status, title, chi
 };
 
 const OllamaInstallStep: React.FC<StepProps> = (props) => {
-  const { serverStatus, installationModes, currentStatus, setCurrentStatus, isOffline, ollamaInstallationError, ollamaInstallationProgress, setOllamaInstallationProgress } = useWizardContext();
+  const {
+    serverStatus,
+    installationModes,
+    currentStatus,
+    setCurrentStatus,
+    isOffline,
+    ollamaInstallationError,
+    ollamaInstallationProgress,
+    setOllamaInstallationProgress,
+  } = useWizardContext();
 
   const handleDownload = () => {
     setCurrentStatus(WizardStatus.downloadingOllama);
@@ -186,50 +266,63 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
     vscode.postMessage({
       command: "cancelInstallation",
       data: {
-        target: "ollama"
-      }
+        target: "ollama",
+      },
     });
     setCurrentStatus(WizardStatus.idle);
     setOllamaInstallationProgress(0);
   };
 
-  useEffect(() => {//cancel download on error
+  useEffect(() => {
+    //cancel download on error
     if (ollamaInstallationError || isOffline) {
       cancelDownload();
     }
   }, [ollamaInstallationError, isOffline]);
 
-  const isDevspaces = installationModes.length > 0 && installationModes[0].id === "devspaces";
+  const isDevspaces =
+    installationModes.length > 0 && installationModes[0].id === "devspaces";
 
   let serverButton;
 
-  if (serverStatus === ServerStatus.started || serverStatus === ServerStatus.stopped) {
+  if (
+    serverStatus === ServerStatus.started ||
+    serverStatus === ServerStatus.stopped
+  ) {
     serverButton = (
-      <VSCodeButton variant='secondary' disabled>
+      <VSCodeButton variant="secondary" disabled>
         Complete!
       </VSCodeButton>
     );
   } else if (isDevspaces) {
     const hiddenLinkRef = useRef<HTMLAnchorElement>(null);
     const hiddenLink = // Trick to open the link directly, avoiding calling VS Code API, which would show a security warning
-      <a
-        ref={hiddenLinkRef}
-        href="https://developers.redhat.com/articles/2024/08/12/integrate-private-ai-coding-assistant-ollama"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="hidden"
-      >
-        Red Hat Dev Spaces Installation Guide
-      </a>;
-    serverButton = <>
-      {hiddenLink}
-      <VSCodeButton onClick={() => hiddenLinkRef.current?.click()}>
-        Installation Guide
-      </VSCodeButton>
-    </>
+      (
+        <a
+          ref={hiddenLinkRef}
+          href="https://developers.redhat.com/articles/2024/08/12/integrate-private-ai-coding-assistant-ollama"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hidden"
+        >
+          Red Hat Dev Spaces Installation Guide
+        </a>
+      );
+    serverButton = (
+      <>
+        {hiddenLink}
+        <VSCodeButton onClick={() => hiddenLinkRef.current?.click()}>
+          Installation Guide
+        </VSCodeButton>
+      </>
+    );
   } else if (installationModes.length > 0) {
     serverButton = (
-      <VSCodeButton onClick={handleDownload} disabled={isOffline} title={installationModes[0].label}>
+      <VSCodeButton
+        onClick={handleDownload}
+        disabled={isOffline}
+        title={installationModes[0].label}
+      >
         Download and Install Ollama
       </VSCodeButton>
     );
@@ -239,7 +332,8 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
     <WizardStep {...props}>
       <div className="mt-4">
         <p className="text-sm text-[--vscode-editor-foreground]">
-          Ollama is an open source tool that allows running AI models locally. It is required by Granite.Code.
+          Ollama is an open source tool that allows running AI models locally.
+          It is required by Granite.Code.
         </p>
         {isDevspaces && (
           <p className="text-sm text-[--vscode-editor-foreground]">
@@ -249,22 +343,20 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
 
         {currentStatus !== WizardStatus.downloadingOllama && serverButton}
 
-        {currentStatus === WizardStatus.downloadingOllama &&
+        {currentStatus === WizardStatus.downloadingOllama && (
           <div className="mt-4 flex items-center gap-2">
-            <VSCodeButton
-              variant="secondary"
-              onClick={cancelDownload}
-            >
+            <VSCodeButton variant="secondary" onClick={cancelDownload}>
               Cancel
             </VSCodeButton>
             not here
             <ProgressBlock progress={ollamaInstallationProgress} />
           </div>
-        }
+        )}
 
         {!isDevspaces && installationModes.length > 0 && (
           <p className="text-sm text-[--vscode-editor-foreground]">
-            If you prefer, you can also <a href='https://ollama.com/download'>install Ollama manually</a>.
+            If you prefer, you can also{" "}
+            <a href="https://ollama.com/download">install Ollama manually</a>.
           </p>
         )}
         {!isDevspaces && isOffline && (
@@ -279,12 +371,25 @@ const OllamaInstallStep: React.FC<StepProps> = (props) => {
 };
 
 const ModelSelectionStep: React.FC<StepProps> = (props) => {
-  const { serverStatus, recommendedModel, selectedModel, setSelectedModel, modelInstallationProgress, setModelInstallationProgress, modelInstallationStatus, setModelInstallationStatus, isOffline, modelInstallationError, setModelInstallationError, systemInfo } = useWizardContext();
+  const {
+    serverStatus,
+    recommendedModel,
+    selectedModel,
+    setSelectedModel,
+    modelInstallationProgress,
+    setModelInstallationProgress,
+    modelInstallationStatus,
+    setModelInstallationStatus,
+    isOffline,
+    modelInstallationError,
+    setModelInstallationError,
+    systemInfo,
+  } = useWizardContext();
   const [systemError, setSystemError] = useState<string | undefined>();
 
   const startDownload = () => {
     setModelInstallationError(undefined);
-    setModelInstallationStatus('downloading');
+    setModelInstallationStatus("downloading");
     vscode.postMessage({
       command: "installModels",
       data: {
@@ -297,10 +402,10 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
     vscode.postMessage({
       command: "cancelInstallation",
       data: {
-        target: "models"
-      }
+        target: "models",
+      },
     });
-    setModelInstallationStatus('idle');
+    setModelInstallationStatus("idle");
     setModelInstallationProgress(0);
   };
 
@@ -314,7 +419,8 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
     });
   };
 
-  useEffect(() => {//cancel download on error
+  useEffect(() => {
+    //cancel download on error
     if (modelInstallationError || isOffline) {
       cancelDownload();
     }
@@ -325,7 +431,9 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
       const { freeDiskSpace } = systemInfo.diskSpace;
       const requiredDiskSpace = getRequiredSpace(selectedModel);
       if (freeDiskSpace < requiredDiskSpace) {
-        setSystemError(`Insufficient disk space available: ${ formatSize(freeDiskSpace)} free, ${formatSize(requiredDiskSpace)} required.`);
+        setSystemError(
+          `Insufficient disk space available: ${formatSize(freeDiskSpace)} free, ${formatSize(requiredDiskSpace)} required.`,
+        );
       } else {
         setSystemError(undefined);
       }
@@ -334,14 +442,15 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
 
   const modelOptions: ModelOption[] = [
     {
-      key: 'large',
-      name: 'Large',
-      description: 'For machines with 32GB of memory and a fast GPU',
+      key: "large",
+      name: "Large",
+      description: "For machines with 32GB of memory and a fast GPU",
     },
     {
-      key: 'small',
-      name: 'Small',
-      description: 'For machines with less than 32GB of memory and slow graphics',
+      key: "small",
+      name: "Small",
+      description:
+        "For machines with less than 32GB of memory and slow graphics",
     },
   ];
 
@@ -350,9 +459,15 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
       {props.isActive && (
         <div className="mt-4">
           <p className="text-sm text-[--vscode-editor-foreground]">
-            Select which model you want to use. You can change this preference in the settings.
+            Select which model you want to use. You can change this preference
+            in the settings.
           </p>
-          <RadioGroup value={selectedModel} onChange={handleModelChange} className="mt-4" disabled={modelInstallationStatus !== 'idle'}>
+          <RadioGroup
+            value={selectedModel}
+            onChange={handleModelChange}
+            className="mt-4"
+            disabled={modelInstallationStatus !== "idle"}
+          >
             <div className="space-y-4">
               {modelOptions.map((option) => (
                 <RadioGroup.Option
@@ -361,15 +476,15 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
                   className="relative flex cursor-pointer rounded focus:outline-none"
                 >
                   {({ checked }) => (
-                    <div className="flex w-full items-start mt-1">
+                    <div className="mt-1 flex w-full items-start">
                       <input
                         type="radio"
                         checked={checked}
                         readOnly
-                        className="h-4 w-4 mt-2 border border-[--vscode-editor-foreground] bg-transparent focus:ring-0 focus:ring-offset-0"
+                        className="mt-2 h-4 w-4 border border-[--vscode-editor-foreground] bg-transparent focus:ring-0 focus:ring-offset-0"
                       />
                       <div className="ml-3 space-y-1">
-                        <RadioGroup.Label className="text-[--vscode-editor-foreground] font-bold">
+                        <RadioGroup.Label className="font-bold text-[--vscode-editor-foreground]">
                           {option.name}
                         </RadioGroup.Label>
                         <RadioGroup.Description className="text-sm leading-normal text-[--vscode-editor-foreground] opacity-80">
@@ -389,29 +504,28 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
           </RadioGroup>
 
           <div className="mt-4 flex items-center gap-2">
-            {modelInstallationStatus === 'idle' && (
-            <VSCodeButton
-              onClick={startDownload}
-              disabled={isOffline || systemError !== undefined || (serverStatus !== ServerStatus.started && serverStatus !== ServerStatus.stopped)}
-              variant="primary"
-            >
-             Download
-            </VSCodeButton>
+            {modelInstallationStatus === "idle" && (
+              <VSCodeButton
+                onClick={startDownload}
+                disabled={
+                  isOffline ||
+                  systemError !== undefined ||
+                  (serverStatus !== ServerStatus.started &&
+                    serverStatus !== ServerStatus.stopped)
+                }
+                variant="primary"
+              >
+                Download
+              </VSCodeButton>
             )}
-            {modelInstallationStatus === 'complete' && (
-            <VSCodeButton
-              disabled={true}
-              variant="secondary"
-            >
-               Complete!
-            </VSCodeButton>
+            {modelInstallationStatus === "complete" && (
+              <VSCodeButton disabled={true} variant="secondary">
+                Complete!
+              </VSCodeButton>
             )}
-            {modelInstallationStatus === 'downloading' && (
+            {modelInstallationStatus === "downloading" && (
               <>
-                <VSCodeButton
-                  variant="secondary"
-                  onClick={cancelDownload}
-                >
+                <VSCodeButton variant="secondary" onClick={cancelDownload}>
                   Cancel
                 </VSCodeButton>
 
@@ -421,17 +535,18 @@ const ModelSelectionStep: React.FC<StepProps> = (props) => {
           </div>
 
           {systemError && (
-            <DiagnosticMessage message={systemError} type='error' />
+            <DiagnosticMessage message={systemError} type="error" />
           )}
           {modelInstallationError && (
-            <DiagnosticMessage message={modelInstallationError} type='error' />
+            <DiagnosticMessage message={modelInstallationError} type="error" />
           )}
-          {serverStatus !== ServerStatus.started && serverStatus !== ServerStatus.stopped && (
-            <DiagnosticMessage
-              type="warning"
-              message="Ollama must be installed"
-            />
-          )}
+          {serverStatus !== ServerStatus.started &&
+            serverStatus !== ServerStatus.stopped && (
+              <DiagnosticMessage
+                type="warning"
+                message="Ollama must be installed"
+              />
+            )}
           {serverStatus === ServerStatus.stopped && (
             <DiagnosticMessage
               type="info"
@@ -464,10 +579,7 @@ const StartLocalAIStep: React.FC<StepProps> = (props) => {
           <p className="text-sm text-[--vscode-editor-foreground]">
             Granite.Code is ready to be used
           </p>
-          <VSCodeButton
-            className="mt-4"
-            onClick={handleShowTutorial}
-          >
+          <VSCodeButton className="mt-4" onClick={handleShowTutorial}>
             Open Tutorial
           </VSCodeButton>
         </div>
@@ -497,21 +609,25 @@ function init(): void {
 }
 
 const WizardContent: React.FC = () => {
-  const { currentStatus, setCurrentStatus,
-          activeStep, setActiveStep,
-          stepStatuses, setStepStatuses,
-          setServerStatus,
-          setSystemInfo,
-          setInstallationModes,
-          setRecommendedModel,
-          setSelectedModel,
-          setModelInstallationProgress,
-          setModelInstallationError,
-          setModelInstallationStatus,
-          setIsOffline,
-          setOllamaInstallationProgress,
-          setOllamaInstallationError
-        } = useWizardContext();
+  const {
+    currentStatus,
+    setCurrentStatus,
+    activeStep,
+    setActiveStep,
+    stepStatuses,
+    setStepStatuses,
+    setServerStatus,
+    setSystemInfo,
+    setInstallationModes,
+    setRecommendedModel,
+    setSelectedModel,
+    setModelInstallationProgress,
+    setModelInstallationError,
+    setModelInstallationStatus,
+    setIsOffline,
+    setOllamaInstallationProgress,
+    setOllamaInstallationError,
+  } = useWizardContext();
   const currentStatusRef = useRef(currentStatus);
 
   // Update ref when currentStatus changes
@@ -535,7 +651,9 @@ const WizardContent: React.FC = () => {
           setInstallationModes(data.installModes);
           const sysinfo = data.systemInfo as SystemInfo;
           setSystemInfo(sysinfo);
-          const recommendedModel = isHighEndMachine(sysinfo) ? "large" : "small";
+          const recommendedModel = isHighEndMachine(sysinfo)
+            ? "large"
+            : "small";
           setRecommendedModel(recommendedModel);
           const wizardState = data.wizardState as WizardState | undefined;
           if (wizardState) {
@@ -557,20 +675,31 @@ const WizardContent: React.FC = () => {
           const data = payload.data;
           setServerStatus(data.serverStatus);
           const newStepStatuses = data.wizardState.stepStatuses as boolean[];
-          setStepStatuses(prevStatuses => {
-            if (newStepStatuses[OLLAMA_STEP] && !newStepStatuses[MODELS_STEP] && prevStatuses[OLLAMA_STEP] != newStepStatuses[OLLAMA_STEP]) {
+          setStepStatuses((prevStatuses) => {
+            if (
+              newStepStatuses[OLLAMA_STEP] &&
+              !newStepStatuses[MODELS_STEP] &&
+              prevStatuses[OLLAMA_STEP] != newStepStatuses[OLLAMA_STEP]
+            ) {
               setActiveStep(MODELS_STEP);
             }
             if (newStepStatuses[MODELS_STEP]) {
               setModelInstallationProgress(100);
               setModelInstallationStatus("complete");
-              if (!newStepStatuses[FINAL_STEP] && prevStatuses[MODELS_STEP] != newStepStatuses[MODELS_STEP]) {
+              if (
+                !newStepStatuses[FINAL_STEP] &&
+                prevStatuses[MODELS_STEP] != newStepStatuses[MODELS_STEP]
+              ) {
                 setActiveStep(FINAL_STEP);
               }
             }
             return newStepStatuses;
           });
-          if (newStepStatuses[OLLAMA_STEP] && currStatus === WizardStatus.downloadingOllama || currStatus === WizardStatus.startingOllama) {
+          if (
+            (newStepStatuses[OLLAMA_STEP] &&
+              currStatus === WizardStatus.downloadingOllama) ||
+            currStatus === WizardStatus.startingOllama
+          ) {
             setCurrentStatus(WizardStatus.idle);
           }
           break;
@@ -578,23 +707,27 @@ const WizardContent: React.FC = () => {
         case "modelInstallationProgress": {
           const progress = payload.data?.progress as ProgressData | undefined;
           if (progress && progress.total) {
-            const progressPercentage = ((progress.completed ?? 0) / progress.total) * 100;
-            setModelInstallationProgress(Math.min(progressPercentage, 99.99));// Don't show 100% completion until it's actually done
+            const progressPercentage =
+              ((progress.completed ?? 0) / progress.total) * 100;
+            setModelInstallationProgress(Math.min(progressPercentage, 99.99)); // Don't show 100% completion until it's actually done
           }
           const error = payload.data?.error as string | undefined;
           if (error) {
             console.error("Model installation error: " + error);
             setModelInstallationProgress(0);
-            setModelInstallationError("Unable to install the Granite Model: " + error);
+            setModelInstallationError(
+              "Unable to install the Granite Model: " + error,
+            );
           }
           break;
         }
         case "ollamaInstallationProgress": {
           const progress = payload.data?.progress as ProgressData | undefined;
           if (progress && progress.total) {
-            const progressPercentage = ((progress.completed ?? 0) / progress.total) * 100;
+            const progressPercentage =
+              ((progress.completed ?? 0) / progress.total) * 100;
             console.log("Ollama installation progress: " + progressPercentage);
-            setOllamaInstallationProgress(Math.min(progressPercentage, 99.99));// Don't show 100% completion until it's actually done
+            setOllamaInstallationProgress(Math.min(progressPercentage, 99.99)); // Don't show 100% completion until it's actually done
           }
           const error = payload.data?.error as string | undefined;
           if (error) {
@@ -608,16 +741,17 @@ const WizardContent: React.FC = () => {
       }
     };
 
-    window.addEventListener('message', handleMessage);
+    window.addEventListener("message", handleMessage);
     init(); // fetch system info once //FIXME diskspace can vary over time, might be moved to requestStatus()
     requestStatus(); // check ollama and models statuses
-    const intervalId = setInterval(//Poll for ollama and models status updates
+    const intervalId = setInterval(
+      //Poll for ollama and models status updates
       requestStatus,
-      REFETCH_MODELS_INTERVAL_MS
+      REFETCH_MODELS_INTERVAL_MS,
     );
     return () => {
       clearInterval(intervalId);
-      window.removeEventListener('message', handleMessage);
+      window.removeEventListener("message", handleMessage);
     };
   }, []);
 
@@ -626,33 +760,33 @@ const WizardContent: React.FC = () => {
       setIsOffline(!navigator.onLine);
     };
 
-    window.addEventListener('online', checkOnlineStatus);
-    window.addEventListener('offline', checkOnlineStatus);
+    window.addEventListener("online", checkOnlineStatus);
+    window.addEventListener("offline", checkOnlineStatus);
     checkOnlineStatus(); // Initial check
 
     return () => {
-      window.removeEventListener('online', checkOnlineStatus);
-      window.removeEventListener('offline', checkOnlineStatus);
+      window.removeEventListener("online", checkOnlineStatus);
+      window.removeEventListener("offline", checkOnlineStatus);
     };
   }, []);
 
   const steps = [
-    { component: OllamaInstallStep, title: 'Download and install Ollama' },
-    { component: ModelSelectionStep, title: 'Download a Granite model' },
-    { component: StartLocalAIStep, title: 'Start using local AI' },
+    { component: OllamaInstallStep, title: "Download and install Ollama" },
+    { component: ModelSelectionStep, title: "Download a Granite model" },
+    { component: StartLocalAIStep, title: "Start using local AI" },
   ];
 
   return (
     <div className="h-full w-full" role="tablist">
       {/* Main container with responsive layout */}
-      <div className="px-10 pt-1 max-w-[1400px] mx-10 md:px-16 md:pt-6">
-        <div className="flex flex-col md:flex-row gap-8">
+      <div className="mx-10 max-w-[1400px] px-10 pt-1 md:px-16 md:pt-6">
+        <div className="flex flex-col gap-8 md:flex-row">
           {/* Left panel with text and steps */}
           <div className="max-w-[600px] flex-1">
-            <h2 className="text-3xl font-normal mb-2 text-[--vscode-foreground]">
+            <h2 className="mb-2 text-3xl font-normal text-[--vscode-foreground]">
               Granite.Code
             </h2>
-            <h2 className="text-2xl font-light mb-1 text-[--vscode-foreground]">
+            <h2 className="mb-1 text-2xl font-light text-[--vscode-foreground]">
               Local AI setup
             </h2>
             <p className="mb-8 text-[--vscode-descriptionForeground]">
@@ -677,11 +811,11 @@ const WizardContent: React.FC = () => {
 
           {/* Right panel with image */}
           {/*TODO make the image resize before being moved down*/}
-          <div className="flex justify-center flex-1">
+          <div className="flex flex-1 justify-center">
             <img
               src={`${window.vscMediaUrl}/granite/step_${activeStep + 1}.svg`}
               alt={`Step ${activeStep + 1} illustration`}
-              className="max-w-full h-auto object-contain opacity-90 max-h-[400px]"
+              className="h-auto max-h-[400px] max-w-full object-contain opacity-90"
             />
           </div>
         </div>
@@ -692,10 +826,13 @@ const WizardContent: React.FC = () => {
 
 function getRequiredSpace(selectedModel: LocalModelSize): number {
   //FIXME check if model is already downloaded
-  const graniteModel = (selectedModel === 'large') ? DEFAULT_MODEL_GRANITE_LARGE : DEFAULT_MODEL_GRANITE_SMALL;
-  const models: string[] = [graniteModel.model, 'nomic-embed-text:latest'];
+  const graniteModel =
+    selectedModel === "large"
+      ? DEFAULT_MODEL_GRANITE_LARGE
+      : DEFAULT_MODEL_GRANITE_SMALL;
+  const models: string[] = [graniteModel.model, "nomic-embed-text:latest"];
   return models.reduce((sum, model) => {
-    const modelInfo = DEFAULT_MODEL_INFO.get(model);//FIXME get from registry
+    const modelInfo = DEFAULT_MODEL_INFO.get(model); //FIXME get from registry
     return sum + (modelInfo ? modelInfo.size : 0);
   }, 0);
 }

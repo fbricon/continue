@@ -1,5 +1,3 @@
-import * as fs from 'fs';
-
 import { ConfigHandler } from 'core/config/ConfigHandler';
 import { EXTENSION_NAME } from 'core/control-plane/env';
 import { DOWNLOADABLE_MODELS } from 'core/granite/commons/modelRequirements';
@@ -7,7 +5,6 @@ import { ProgressData } from "core/granite/commons/progressData";
 import { ModelStatus, ServerStatus } from 'core/granite/commons/statuses';
 import { FINAL_STEP, MODELS_STEP, OLLAMA_STEP, WizardState } from 'core/granite/commons/wizardState';
 import {
-  CancellationTokenSource,
   commands,
   Disposable,
   ExtensionContext,
@@ -70,7 +67,7 @@ export class SetupGranitePage {
           {
             modal: true,
             detail: 'Granite.Code needs to be setup before it can be used. Setup is not yet complete.'
-           },
+          },
           RESUME_LABEL// Cancel is always shown
         );
         reopen = choice === RESUME_LABEL;
@@ -91,7 +88,7 @@ export class SetupGranitePage {
     this._setWebviewMessageListener(this._panel);
 
     // Send a new status on configuration changes
-    const cleanupConfigUpdate = configHandler.onConfigUpdate(({config}) => {
+    const cleanupConfigUpdate = configHandler.onConfigUpdate(({ config }) => {
       this.publishStatus(this._panel.webview);
     });
     this._disposables.push(new Disposable(cleanupConfigUpdate));
@@ -184,8 +181,8 @@ export class SetupGranitePage {
 
     const inDevelopmentMode = context?.extensionMode === ExtensionMode.Development;
 
-    const devStyleSrc = inDevelopmentMode ?  "http://localhost:5173" : "";
-    const devConnectSrc = inDevelopmentMode ?  "ws://localhost:5173" : "";
+    const devStyleSrc = inDevelopmentMode ? "http://localhost:5173" : "";
+    const devConnectSrc = inDevelopmentMode ? "ws://localhost:5173" : "";
 
     const nonce = getNonce();
     // Tip: Install the es6-string-html VS Code extension to enable code highlighting below
@@ -201,17 +198,16 @@ export class SetupGranitePage {
           </head>
           <body>
           <div id="root"></div>
-          ${
-            inDevelopmentMode
-            ? `<script type="module" nonce="${nonce}">
+          ${inDevelopmentMode
+        ? `<script type="module" nonce="${nonce}">
             import RefreshRuntime from "http://localhost:5173/@react-refresh"
             RefreshRuntime.injectIntoGlobalHook(window)
             window.$RefreshReg$ = () => {}
             window.$RefreshSig$ = () => (type) => type
             window.__vite_plugin_react_preamble_installed__ = true
             </script>`
-            : ""
-          }
+        : ""
+      }
           <script type="module" nonce="${nonce}">
             window.vscMediaUrl="${vscMediaUrl}";
           </script>
@@ -285,7 +281,7 @@ export class SetupGranitePage {
             this.publishStatus(webview);
             break;
           case "selectModels":
-            this.wizardState.selectedModelSize =  data.model as LocalModelSize;;
+            this.wizardState.selectedModelSize = data.model as LocalModelSize;;
             break;
           case "installModels":
             await this.installModels(data.model as LocalModelSize, panel);
@@ -320,56 +316,56 @@ export class SetupGranitePage {
   }
 
   private async installModels(modelSize: LocalModelSize, panel: WebviewPanel) {
-     // Check if the server is running, if not, start it and wait for it to be ready until timeout is reached
-     var { serverStatus, timeout } = await this.waitUntilOllamaStarts();
-     const webview = panel.webview;
-     if (serverStatus !== ServerStatus.started) {
-       const errorMessage = `Ollama server failed to start in ${timeout / 1000} seconds`;
-       console.error(errorMessage);
-       webview.postMessage({
-         command: "modelInstallationProgress",
-         data: {
-           error: errorMessage,
-         },
-       });
-       return;
-     }
-     console.log("Installing models");
+    // Check if the server is running, if not, start it and wait for it to be ready until timeout is reached
+    var { serverStatus, timeout } = await this.waitUntilOllamaStarts();
+    const webview = panel.webview;
+    if (serverStatus !== ServerStatus.started) {
+      const errorMessage = `Ollama server failed to start in ${timeout / 1000} seconds`;
+      console.error(errorMessage);
+      webview.postMessage({
+        command: "modelInstallationProgress",
+        data: {
+          error: errorMessage,
+        },
+      });
+      return;
+    }
+    console.log("Installing models");
 
-     async function reportProgress(progress: ProgressData) {
-       webview.postMessage({
-         command: "modelInstallationProgress",
-         data: {
-           progress,
-         },
-       });
-     }
-     this.modelInstallCanceller?.dispose();
-     this.modelInstallCanceller = new CancellationController();
-     this._disposables.push(this.modelInstallCanceller);
-     try {
-       this.wizardState.selectedModelSize = modelSize;
-       const result = await this.server.pullModels(modelSize, this.modelInstallCanceller.signal, reportProgress);
-       this.wizardState.stepStatuses[MODELS_STEP] = result;
-       this.publishStatus(webview);
-       if (result) {
-         await this.saveSettings(modelSize);
-         if (!panel.visible) {
-           const selection = await window.showInformationMessage("Granite.Code is ready to be used.", "Show Setup Wizard");
-           if (selection) {
-             panel.reveal();
-           }
-         }
-       }
-     } catch (error: any) {
-       console.error("Error during model installation", error);
-       webview.postMessage({
-         command: "modelInstallationProgress",
-         data: {
-           error: error.message,
-         },
-       });
-     }
+    async function reportProgress(progress: ProgressData) {
+      webview.postMessage({
+        command: "modelInstallationProgress",
+        data: {
+          progress,
+        },
+      });
+    }
+    this.modelInstallCanceller?.dispose();
+    this.modelInstallCanceller = new CancellationController();
+    this._disposables.push(this.modelInstallCanceller);
+    try {
+      this.wizardState.selectedModelSize = modelSize;
+      const result = await this.server.pullModels(modelSize, this.modelInstallCanceller.signal, reportProgress);
+      this.wizardState.stepStatuses[MODELS_STEP] = result;
+      this.publishStatus(webview);
+      if (result) {
+        await this.saveSettings(modelSize);
+        if (!panel.visible) {
+          const selection = await window.showInformationMessage("Granite.Code is ready to be used.", "Show Setup Wizard");
+          if (selection) {
+            panel.reveal();
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error("Error during model installation", error);
+      webview.postMessage({
+        command: "modelInstallationProgress",
+        data: {
+          error: error.message,
+        },
+      });
+    }
   }
 
   private async waitUntilOllamaStarts() {

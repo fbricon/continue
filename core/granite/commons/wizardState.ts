@@ -5,6 +5,6 @@ export const MODELS_STEP = 1;
 export const FINAL_STEP = 2;
 
 export interface WizardState {
-    stepStatuses: boolean[],
-    selectedModelSize: LocalModelSize
+  stepStatuses: boolean[];
+  selectedModelSize: LocalModelSize;
 }

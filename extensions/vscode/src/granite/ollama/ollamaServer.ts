@@ -184,10 +184,10 @@ export class OllamaServer implements IModelServer {
   }
 
   async downloadOllamaInstaller(signal: AbortSignal, reportProgress: (progress: ProgressData) => void): Promise<string | undefined> {
-      const randomSuffix = Math.random().toString(36).substring(2, 10);
-      const ollamaInstallerPath = path.join(os.tmpdir(), EXTENSION_NAME, `OllamaSetup-${randomSuffix}.exe`);
-      await downloadFileFromUrl("https://ollama.com/download/OllamaSetup.exe", ollamaInstallerPath, signal, new DownloadingProgressReporter(reportProgress));
-      return ollamaInstallerPath;
+    const randomSuffix = Math.random().toString(36).substring(2, 10);
+    const ollamaInstallerPath = path.join(os.tmpdir(), EXTENSION_NAME, `OllamaSetup-${randomSuffix}.exe`);
+    await downloadFileFromUrl("https://ollama.com/download/OllamaSetup.exe", ollamaInstallerPath, signal, new DownloadingProgressReporter(reportProgress));
+    return ollamaInstallerPath;
   }
 
 

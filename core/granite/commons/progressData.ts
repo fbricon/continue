@@ -1,6 +1,6 @@
 export interface ProgressData {
   key: string;
-  increment: number,
+  increment: number;
   status?: string;
   completed?: number; // number of bytes already completed
   total?: number; // total number of bytes

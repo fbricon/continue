@@ -1,18 +1,18 @@
 import { createWriteStream } from "fs";
 import * as fs from "fs/promises";
-import * as path from 'path';
+import * as path from "path";
 import { Readable } from "stream";
 
 import fetch from "node-fetch";
 import { ProgressReporter } from "core/granite/commons/progressData";
 
-import { checkFileExists } from './fsUtils';
+import { checkFileExists } from "./fsUtils";
 
 export async function downloadFileFromUrl(
   url: string,
   destinationPath: string,
   signal: AbortSignal,
-  progressReporter: ProgressReporter
+  progressReporter: ProgressReporter,
 ) {
   const fileName = destinationPath.split("/").pop()!;
   await fs.mkdir(path.dirname(destinationPath), { recursive: true });
@@ -22,7 +22,7 @@ export async function downloadFileFromUrl(
   if (!response.ok) {
     throw new Error(`Failed to download ${fileName}`);
   }
-  const totalBytes = parseInt(response.headers.get('Content-Length') || '0');
+  const totalBytes = parseInt(response.headers.get("Content-Length") || "0");
   progressReporter.begin("Downloading Ollama", totalBytes);
   const body = response.body;
   if (!body) {
@@ -33,20 +33,18 @@ export async function downloadFileFromUrl(
   await new Promise((resolve, reject) => {
     const reader = Readable.from(body);
 
-    reader.on('data', (chunk) => {
+    reader.on("data", (chunk) => {
       progressReporter.update(chunk.length);
     });
 
-    reader.pipe(writer)
-      .on('finish', resolve)
-      .on('error', reject);
+    reader.pipe(writer).on("finish", resolve).on("error", reject);
 
     // Handle abortion
-    signal.addEventListener('abort', () => {
+    signal.addEventListener("abort", () => {
       reader.destroy(); // Stop reading
       writer.destroy(); // Close the file
       fs.unlink(destinationPath).catch(() => {}); // Delete the partial file
-      reject(new Error('Download cancelled'));
+      reject(new Error("Download cancelled"));
     });
   });
 

@@ -22,7 +22,7 @@ import { getNonce } from "../utils/getNonce";
 import { getUri } from "../utils/getUri";
 import { getSystemInfo } from "../utils/sysUtils";
 import { LocalModelSize } from 'core';
-import { CancellationController } from '../utils/CancellationController';
+import { CancellationController } from '../utils/cancellationController';
 
 
 /**

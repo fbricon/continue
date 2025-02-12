@@ -23,6 +23,8 @@ import { getUri } from "../utils/getUri";
 import { getSystemInfo } from "../utils/sysUtils";
 import { LocalModelSize } from 'core';
 import { CancellationController } from '../utils/cancellationController';
+import { VsCodeWebviewProtocol } from '../../webviewProtocol';
+import { SHOW_GRANITE_ONBOARDING_CARD_KEY } from 'core/granite/commons/constants';
 
 
 /**
@@ -49,7 +51,7 @@ export class SetupGranitePage {
    * @param panel A reference to the webview panel
    * @param extensionUri The URI of the directory containing the extension
    */
-  private constructor(panel: WebviewPanel, context: ExtensionContext, private configHandler: ConfigHandler, defaultState?: WizardState) {
+  private constructor(panel: WebviewPanel, private context: ExtensionContext, private configHandler: ConfigHandler,  private chatWebViewProtocol: VsCodeWebviewProtocol, defaultState?: WizardState) {
     this._panel = panel;
     this._disposables.push(this._panel);
     this.server = new OllamaServer(context);
@@ -74,7 +76,7 @@ export class SetupGranitePage {
       }
       this.dispose();
       if (reopen) {
-        SetupGranitePage.render(context, configHandler, this.wizardState);
+        SetupGranitePage.render(context, configHandler, this.chatWebViewProtocol, this.wizardState);
       }
     }, null, this._disposables);
 
@@ -100,7 +102,7 @@ export class SetupGranitePage {
    *
    * @param extensionUri The URI of the directory containing the extension.
    */
-  public static render(context: ExtensionContext, configHandler: ConfigHandler, wizardState?: WizardState) {
+  public static render(context: ExtensionContext, configHandler: ConfigHandler, chatWebViewProtocol: VsCodeWebviewProtocol, wizardState?: WizardState) {
     if (SetupGranitePage.currentPanel) {
       // If the webview panel already exists reveal it
       SetupGranitePage.currentPanel._panel.reveal(ViewColumn.One);
@@ -126,7 +128,7 @@ export class SetupGranitePage {
         }
       );
 
-      SetupGranitePage.currentPanel = new SetupGranitePage(panel, context, configHandler, wizardState);
+      SetupGranitePage.currentPanel = new SetupGranitePage(panel, context, configHandler, chatWebViewProtocol, wizardState);
     }
   }
 
@@ -350,6 +352,8 @@ export class SetupGranitePage {
       this.publishStatus(webview);
       if (result) {
         await this.saveSettings(modelSize);
+        this.hideGraniteOnboardingCard();
+
         if (!panel.visible) {
           const selection = await window.showInformationMessage("Granite.Code is ready to be used.", "Show Setup Wizard");
           if (selection) {
@@ -366,6 +370,11 @@ export class SetupGranitePage {
         },
       });
     }
+  }
+
+  private hideGraniteOnboardingCard() {
+    this.context.globalState.update(SHOW_GRANITE_ONBOARDING_CARD_KEY, false);
+    this.chatWebViewProtocol.send("showGraniteOnboardingCard", false);
   }
 
   private async waitUntilOllamaStarts() {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { CustomScrollbarDiv, defaultBorderRadius } from ".";
@@ -25,6 +25,7 @@ import Footer from "./Footer";
 import { isNewUserOnboarding, useOnboardingCard } from "./OnboardingCard";
 import OSRContextMenu from "./OSRContextMenu";
 import PostHogPageView from "./PosthogPageView";
+import GraniteOnboardingCard  from "../granite/GraniteOnboardingCard";
 
 const LayoutTopDiv = styled(CustomScrollbarDiv)`
   height: 100%;
@@ -44,7 +45,7 @@ const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useAppDispatch();
-  const onboardingCard = useOnboardingCard();
+  const [showGraniteOnboardingCard, setShowGraniteOnboardingCard] = useState<boolean>(window.showGraniteCodeOnboarding??false);
   const { pathname } = useLocation();
 
   const configError = useAppSelector((state) => state.config.configError);
@@ -151,22 +152,6 @@ const Layout = () => {
   );
 
   useWebviewListener(
-    "openOnboardingCard",
-    async () => {
-      onboardingCard.open("Best");
-    },
-    [],
-  );
-
-  useWebviewListener(
-    "setupLocalConfig",
-    async () => {
-      onboardingCard.open("Local");
-    },
-    [],
-  );
-
-  useWebviewListener(
     "focusEdit",
     async () => {
       await dispatch(
@@ -214,6 +199,14 @@ const Layout = () => {
     [],
   );
 
+  useWebviewListener(
+    "showGraniteOnboardingCard",
+    async (state) => {
+      setShowGraniteOnboardingCard(state as boolean);
+    },
+    [],
+  );
+
   const isInEditMode = useAppSelector(selectIsInEditMode);
   useWebviewListener("exitEditMode", async () => {
     if (!isInEditMode) {
@@ -247,16 +240,8 @@ const Layout = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (
-      isNewUserOnboarding() &&
-      (location.pathname === "/" || location.pathname === "/index.html")
-    ) {
-      onboardingCard.open("Quickstart");
-    }
-  }, [location]);
-
-  return (
+  return (showGraniteOnboardingCard ?
+    <GraniteOnboardingCard /> :
     <AuthProvider>
       <LayoutTopDiv>
         <OSRContextMenu />

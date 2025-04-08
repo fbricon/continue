@@ -661,7 +661,7 @@
     "@types/node": "20.x",
     "@types/react-dom": "^18.2.4",
     "@types/request": "^2.48.8",
-    "@types/vscode": "1.70",
+    "@types/vscode": "1.97",
     "@types/ws": "^8.5.4",
     "@typescript-eslint/eslint-plugin": "^5.45.0",
     "@vscode/vsce": "^2.22.0",

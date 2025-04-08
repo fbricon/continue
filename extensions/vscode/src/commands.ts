@@ -40,6 +40,7 @@ import { VsCodeIde } from "./VsCodeIde";
 import { LOCAL_DEV_DATA_VERSION } from "core/data/log";
 import { isModelInstaller } from "core/llm";
 import { startLocalOllama } from "core/util/ollamaHelper";
+import { CancellationToken } from "vscode-languageclient";
 import type { VsCodeWebviewProtocol } from "./webviewProtocol";
 
 let fullScreenPanel: vscode.WebviewPanel | undefined;
@@ -1012,7 +1013,44 @@ const getCommandsMap: (
   };
 };
 
+class CopyBufferSpy implements vscode.DocumentPasteEditProvider<vscode.DocumentPasteEdit> {
+  constructor(private context: vscode.ExtensionContext, private core: Core) {}
+
+  async prepareDocumentPaste(document: vscode.TextDocument, ranges: vscode.Range[], dataTransfer: vscode.DataTransfer, token: CancellationToken): Promise<void> {
+    const clipboardText = await this.getDataTransferText(dataTransfer);
+    console.log("Clipboard text: "+ clipboardText);
+    if (clipboardText) {
+      this.core.invoke("clipboardCache/add", {
+        content: clipboardText,
+      });
+    }
+
+    await this.context.workspaceState.update("continue.copyBuffer", {
+      text: clipboardText,
+      copiedAt: new Date().toISOString(),
+    });
+
+  }
+
+  private async getDataTransferText(dataTransfer: vscode.DataTransfer): Promise<string | undefined> {
+    const content = dataTransfer.get("text/plain");
+    return content ? (await content.asString()) : undefined;
+  }
+}
+
 const registerCopyBufferSpy = (
+  context: vscode.ExtensionContext,
+  core: Core,
+) => {
+  const copyBufferSpyDisposable = vscode.languages.registerDocumentPasteEditProvider(
+    {language: "*"},
+    new CopyBufferSpy(context, core),
+    {providedPasteEditKinds: []}
+  );
+  context.subscriptions.push(copyBufferSpyDisposable);
+};
+
+const registerLegacyCopyBufferSpy = (
   context: vscode.ExtensionContext,
   core: Core,
 ) => {
@@ -1027,7 +1065,6 @@ const registerCopyBufferSpy = (
     await vscode.commands.executeCommand("editor.action.clipboardCopyAction");
 
     const clipboardText = await vscode.env.clipboard.readText();
-
     if (clipboardText) {
       core.invoke("clipboardCache/add", {
         content: clipboardText,
@@ -1103,7 +1140,11 @@ export function registerAllCommands(
   core: Core,
   editDecorationManager: EditDecorationManager,
 ) {
-  registerCopyBufferSpy(context, core);
+  if (vscode.languages.registerDocumentPasteEditProvider === undefined) {
+    registerLegacyCopyBufferSpy(context, core);
+  } else {
+    registerCopyBufferSpy(context, core);
+  }
 
   for (const [command, callback] of Object.entries(
     getCommandsMap(

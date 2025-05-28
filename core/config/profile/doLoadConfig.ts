@@ -26,13 +26,11 @@ import { getControlPlaneEnv } from "../../control-plane/env.js";
 import { TeamAnalytics } from "../../control-plane/TeamAnalytics.js";
 import ContinueProxy from "../../llm/llms/stubs/ContinueProxy";
 import { encodeMCPToolUri } from "../../tools/callTool";
-import { getConfigJsonPath, getConfigYamlPath } from "../../util/paths";
+import { getConfigYamlPath } from "../../util/paths";
 import { localPathOrUriToPath } from "../../util/pathToUri";
 import { Telemetry } from "../../util/posthog";
 import { TTS } from "../../util/tts";
 import { getWorkspaceContinueRuleDotFiles } from "../getWorkspaceContinueRuleDotFiles";
-import { loadContinueConfigFromJson } from "../load";
-import { migrateJsonSharedConfig } from "../migrateSharedConfig";
 import { rectifySelectedModelsFromGlobalContext } from "../selectedModels";
 import { loadContinueConfigFromYaml } from "../yaml/loadYaml";
 
@@ -67,12 +65,14 @@ export default async function doLoadConfig(options: {
   const ideSettings = await ideSettingsPromise;
   const workOsAccessToken = await controlPlaneClient.getAccessToken();
 
+  /* Granite-code never used config.json, so we don't need to migrate it
   // Migrations for old config files
   // Removes
   const configJsonPath = getConfigJsonPath();
   if (fs.existsSync(configJsonPath)) {
     migrateJsonSharedConfig(configJsonPath, ide);
   }
+  */
 
   const configYamlPath = localPathOrUriToPath(
     overrideConfigYamlByPath || getConfigYamlPath(ideInfo.ideType),
@@ -98,7 +98,9 @@ export default async function doLoadConfig(options: {
     newConfig = result.config;
     errors = result.errors;
     configLoadInterrupted = result.configLoadInterrupted;
-  } else {
+  }
+  /* Granite-code never used config.json, so we don't need to load it
+  else {
     const result = await loadContinueConfigFromJson(
       ide,
       workspaceConfigs,
@@ -113,7 +115,7 @@ export default async function doLoadConfig(options: {
     errors = result.errors;
     configLoadInterrupted = result.configLoadInterrupted;
   }
-
+  */
   if (configLoadInterrupted || !newConfig) {
     return { errors, config: newConfig, configLoadInterrupted: true };
   }

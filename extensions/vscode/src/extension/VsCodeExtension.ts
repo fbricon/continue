@@ -40,7 +40,10 @@ import { FileSearch } from "../util/FileSearch";
 import { VsCodeIdeUtils } from "../util/ideUtils";
 import { VsCodeIde } from "../VsCodeIde";
 
+import { registerConfigYamlDefinitionProvider } from "./ConfigYamlDefinitionProvider";
 import { ConfigYamlDocumentLinkProvider } from "./ConfigYamlDocumentLinkProvider";
+import { registerConfigYamlHoverProvider } from "./ConfigYamlHoverProvider";
+import { registerVirtualConfigDocumentProvider } from "./VirtualConfigYamlDocumentProvider";
 import { VsCodeMessenger } from "./VsCodeMessenger";
 
 import setupNextEditWindowManager, {
@@ -425,6 +428,11 @@ export class VsCodeExtension {
       new ConfigYamlDocumentLinkProvider(),
     );
     context.subscriptions.push(linkProvider);
+
+    // Register providers for $* slugs in yaml files
+    context.subscriptions.push(registerVirtualConfigDocumentProvider());
+    context.subscriptions.push(registerConfigYamlDefinitionProvider());
+    context.subscriptions.push(registerConfigYamlHoverProvider());
 
     this.ide.onDidChangeActiveTextEditor((filepath) => {
       void this.core.invoke("files/opened", { uris: [filepath] });

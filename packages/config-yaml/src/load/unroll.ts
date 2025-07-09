@@ -26,6 +26,8 @@ import {
 } from "./clientRender.js";
 import { BlockType, getBlockType } from "./getBlockType.js";
 
+export const IgnoredBlockControlFlow = { type: "IgnoredBlockControlFlow" };
+
 export function parseConfigYaml(configYaml: string): ConfigYaml {
   try {
     const parsed = YAML.parse(configYaml);
@@ -342,7 +344,14 @@ export async function unrollBlocks(
               };
             }
             return { index, block: null, error: null };
-          } catch (err) {
+          } catch (err: any) {
+            if (err.type === IgnoredBlockControlFlow.type) {
+              return {
+                index,
+                block: null,
+                error: null,
+              };
+            }
             let msg = "";
             if (
               typeof unrolledBlock.uses !== "string" &&
@@ -380,7 +389,9 @@ export async function unrollBlocks(
       if (result.error) {
         sectionErrors.push(result.error);
       }
-      sectionBlocks[result.index] = result.block;
+      if (result.block) {
+        sectionBlocks[result.index] = result.block;
+      }
     }
 
     return { section, blocks: sectionBlocks, errors: sectionErrors };
@@ -461,7 +472,10 @@ export async function unrollBlocks(
                   : undefined,
               error: null,
             };
-          } catch (err) {
+          } catch (err: any) {
+            if (err.type === IgnoredBlockControlFlow.type) {
+              return {};
+            }
             let msg = "";
             if (injectBlock.uriType === "file") {
               msg = `${(err as Error).message}.\n> ${injectBlock.filePath}`;

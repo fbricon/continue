@@ -2,9 +2,7 @@ import { isSupportedSlug } from "core/config/yaml/VirtualConfigYamlSupport";
 
 export const GRANITE_CODE_CONFIG_SCHEME = "granitecode-config";
 
-export async function getVirtualConfigUri(
-  slug: string,
-): Promise<string | undefined> {
+export function getVirtualConfigUri(slug: string): string | undefined {
   if (!isSupportedSlug(slug)) {
     return undefined;
   }

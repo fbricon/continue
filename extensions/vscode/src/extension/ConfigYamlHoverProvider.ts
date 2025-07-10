@@ -27,7 +27,7 @@ class ConfigYamlHoverProvider implements vscode.HoverProvider {
       return undefined;
     }
 
-    const hoverContent = await getVirtualConfigYamlContent(
+    const hoverContent = getVirtualConfigYamlContent(
       slug,
       getExtensionVersion(),
     );

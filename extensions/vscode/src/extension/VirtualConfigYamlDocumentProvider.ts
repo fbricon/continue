@@ -15,31 +15,19 @@ export function registerVirtualConfigDocumentProvider(): vscode.Disposable {
 class VirtualConfigYamlDocumentProvider
   implements vscode.TextDocumentContentProvider
 {
-  private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
-
-  get onDidChange(): vscode.Event<vscode.Uri> {
-    return this._onDidChange.event;
-  }
-
   async provideTextDocumentContent(
     uri: vscode.Uri,
-    token: vscode.CancellationToken,
+    _token: vscode.CancellationToken,
   ): Promise<string> {
     let slug = uri.path;
     if (slug.endsWith(".yaml")) {
       slug = slug.slice(0, -5); // Remove the .yaml extension
     }
-    const content = await getVirtualConfigYamlContent(
-      slug,
-      getExtensionVersion(),
-    );
+    const content = getVirtualConfigYamlContent(slug, getExtensionVersion());
     if (content) {
       return content;
     }
+    console.warn(`No virtual config found for slug: ${slug}!`);
     return "";
-  }
-
-  update(uri: vscode.Uri): void {
-    this._onDidChange.fire(uri);
   }
 }

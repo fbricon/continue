@@ -26,7 +26,12 @@ import {
 } from "./clientRender.js";
 import { BlockType, getBlockType } from "./getBlockType.js";
 
-export const IgnoredBlockControlFlow = { type: "IgnoredBlockControlFlow" };
+export class IgnoredBlockException extends Error {
+  override name: "IgnoredBlockException" = "IgnoredBlockException";
+  constructor(msg?: string) {
+    super(msg);
+  }
+}
 
 export function parseConfigYaml(configYaml: string): ConfigYaml {
   try {
@@ -345,7 +350,7 @@ export async function unrollBlocks(
             }
             return { index, block: null, error: null };
           } catch (err: any) {
-            if (err.type === IgnoredBlockControlFlow.type) {
+            if (err instanceof IgnoredBlockException) {
               return {
                 index,
                 block: null,
@@ -394,7 +399,11 @@ export async function unrollBlocks(
       }
     }
 
-    return { section, blocks: sectionBlocks, errors: sectionErrors };
+    return {
+      section,
+      blocks: sectionBlocks.filter((b) => b !== undefined),
+      errors: sectionErrors,
+    };
   });
 
   // Process rules in parallel
@@ -473,7 +482,7 @@ export async function unrollBlocks(
               error: null,
             };
           } catch (err: any) {
-            if (err.type === IgnoredBlockControlFlow.type) {
+            if (err instanceof IgnoredBlockException) {
               return {};
             }
             let msg = "";

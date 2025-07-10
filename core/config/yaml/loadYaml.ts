@@ -474,7 +474,7 @@ function getAllModels(
     }
   }
 
-  return allModels;
+  return allModels.filter((model) => model.enabled !== false);
 }
 
 function getAllContextProviders(

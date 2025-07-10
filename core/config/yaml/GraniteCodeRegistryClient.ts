@@ -1,6 +1,6 @@
 import {
   FullSlug,
-  IgnoredBlockControlFlow,
+  IgnoredBlockException,
   PackageIdentifier,
   Registry,
 } from "@continuedev/config-yaml";
@@ -62,7 +62,9 @@ export class GraniteCodeRegistryClient implements Registry {
       // The slug is not recognized, but we don't want to throw an error
       // because it might be a valid slug from a more recent Granite.Code version,
       // we just ignore it.
-      throw IgnoredBlockControlFlow;
+      throw new IgnoredBlockException(
+        `Ignoring unknown granite-code model ${id}`,
+      );
     }
     throw new Error(`Block ${id} is not supported`);
   }

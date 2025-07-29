@@ -17,25 +17,29 @@ export function getVirtualConfigYamlContent(
   switch (slug) {
     case "$granite-code/models/chat":
       return getVirtualConfig(
-        "Granite Code Chat [Read-only]",
+        getTitle("Chat"),
         DEFAULT_MODEL_GRANITE_LARGE,
         extensionVersion,
       );
     case "$granite-code/models/autocomplete":
       return getVirtualConfig(
-        "Granite Code Autocomplete [Read-only]",
+        getTitle("Autocomplete"),
         DEFAULT_GRANITE_COMPLETION_MODEL,
         extensionVersion,
       );
     case "$granite-code/models/embeddings":
       return getVirtualConfig(
-        "Granite Code Embeddings [Read-only]",
+        getTitle("Embeddings"),
         DEFAULT_GRANITE_EMBEDDING_MODEL,
         extensionVersion,
       );
     default:
       return undefined;
   }
+}
+
+function getTitle(role: string): string {
+  return `Granite Code ${role} [Read-only]`;
 }
 
 const keyOrder = [

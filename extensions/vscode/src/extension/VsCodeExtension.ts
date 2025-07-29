@@ -41,6 +41,7 @@ import { VsCodeIdeUtils } from "../util/ideUtils";
 import { VsCodeIde } from "../VsCodeIde";
 
 import { registerConfigYamlDefinitionProvider } from "./ConfigYamlDefinitionProvider";
+import { registerConfigYamlDiagnosticsProvider } from "./ConfigYamlDiagnosticsProvider";
 import { ConfigYamlDocumentLinkProvider } from "./ConfigYamlDocumentLinkProvider";
 import { registerConfigYamlHoverProvider } from "./ConfigYamlHoverProvider";
 import { registerVirtualConfigDocumentProvider } from "./VirtualConfigYamlDocumentProvider";
@@ -433,6 +434,7 @@ export class VsCodeExtension {
     context.subscriptions.push(registerVirtualConfigDocumentProvider());
     context.subscriptions.push(registerConfigYamlDefinitionProvider());
     context.subscriptions.push(registerConfigYamlHoverProvider());
+    context.subscriptions.push(registerConfigYamlDiagnosticsProvider());
 
     this.ide.onDidChangeActiveTextEditor((filepath) => {
       void this.core.invoke("files/opened", { uris: [filepath] });

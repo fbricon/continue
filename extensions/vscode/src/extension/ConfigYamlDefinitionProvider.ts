@@ -22,7 +22,7 @@ class ConfigYamlDefinitionProvider implements vscode.DefinitionProvider {
       return undefined;
     }
 
-    const virtualUri = await getVirtualConfigUri(slug);
+    const virtualUri = getVirtualConfigUri(slug);
     if (!virtualUri) {
       return undefined;
     }
